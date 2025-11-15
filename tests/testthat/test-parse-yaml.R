@@ -23,3 +23,12 @@ test_that("parse_yaml handles simple sequences and mappings", {
 
   expect_error(parse_yaml(c("foo: 1", NA_character_)), "must not contain NA")
 })
+
+test_that("parse_yaml ignores additional documents", {
+  yaml <- "---\nfoo: 1\n---\nbar: 2\n"
+  expect_identical(parse_yaml(yaml), list(foo = 1L))
+})
+
+test_that("parse_yaml handles trailing newlines", {
+  expect_identical(parse_yaml("foo: 1\n"), list(foo = 1L))
+})
