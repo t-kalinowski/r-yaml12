@@ -11,6 +11,7 @@ name = 'yaml12'
 
 [dependencies]
 extendr-api = { git = 'https://github.com/extendr/extendr' }
+saphyr = "0.0.6"
 
 [profile.release]
 lto = true
