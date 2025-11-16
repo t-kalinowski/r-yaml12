@@ -286,21 +286,11 @@ fn extract_yaml_tag(robj: &Robj) -> Result<Option<Tag>> {
         Some(value) => value,
         None => return Ok(None),
     };
-    let strings: Strings = attr
-        .try_into()
-        .map_err(|_| Error::Other("`yaml_tag` attribute must be a character vector".to_string()))?;
-    if strings.len() != 1 {
-        return Err(Error::Other(
-            "`yaml_tag` attribute must be a character vector of length 1".to_string(),
-        ));
-    }
-    let value = strings.elt(0);
-    if value.is_na() {
-        return Err(Error::Other(
-            "`yaml_tag` attribute must not be NA".to_string(),
-        ));
-    }
-    let tag_str = value.to_string();
+    let tag_str: &str = (&attr).try_into().map_err(|err: Error| {
+        Error::Other(format!(
+            "Invalid `yaml_tag` attribute: expected a single, non-missing string ({err})"
+        ))
+    })?;
     if tag_str.is_empty() {
         return Ok(None);
     }

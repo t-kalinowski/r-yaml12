@@ -33,10 +33,16 @@ test_that("encode_yaml preserves yaml_tag attribute", {
 
 test_that("encode_yaml validates yaml_tag attribute shape", {
   tagged <- structure("value", yaml_tag = c("!a", "!b"))
-  expect_error(encode_yaml(tagged), "length 1")
+  expect_error(
+    encode_yaml(tagged),
+    "Invalid `yaml_tag` attribute: expected a single, non-missing string"
+  )
 
   bad_type <- structure("value", yaml_tag = 1L)
-  expect_error(encode_yaml(bad_type), "character vector")
+  expect_error(
+    encode_yaml(bad_type),
+    "Invalid `yaml_tag` attribute: expected a single, non-missing string"
+  )
 })
 
 test_that("encode_yaml respects yaml_keys attribute", {
@@ -88,4 +94,19 @@ test_that("encode_yaml converts NA names to null YAML keys", {
   yaml_keys <- attr(reparsed, "yaml_keys", exact = TRUE)
   expect_identical(yaml_keys[[1]], "a")
   expect_null(yaml_keys[[2]])
+})
+
+test_that("encode_yaml errors clearly on invalid yaml_tag", {
+  missing <- structure("value", yaml_tag = NA_character_)
+  expect_error(
+    encode_yaml(missing),
+    "non-missing string.*Must not be NA"
+  )
+
+  malformed <- structure("value", yaml_tag = "!")
+  expect_error(
+    encode_yaml(malformed),
+    "Invalid YAML tag `!`",
+    fixed = TRUE
+  )
 })
