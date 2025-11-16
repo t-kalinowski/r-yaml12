@@ -203,7 +203,6 @@ if (!jsonlite_available) {
         snippet <- case$snippet
 
         test_that(paste("yaml-test-suite", case_id), {
-          message("[yaml-test-suite] running ", case_id)
           skip_if(
             case_id %in% skip_parse_cases,
             sprintf("Unsupported YAML feature: %s", case_id)
