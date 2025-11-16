@@ -31,6 +31,22 @@ test_that("encode_yaml preserves yaml_tag attribute", {
   expect_identical(attr(reparsed$seq, "yaml_tag"), "!seq")
 })
 
+test_that("encode_yaml round-trips multi-document streams", {
+  docs <- list(list(foo = 1L), list(bar = list(2L, NULL)))
+  encoded <- encode_yaml(docs, multi = TRUE)
+  expect_true(startsWith(encoded, "---"))
+  expect_true(grepl("\n---\n", encoded, fixed = TRUE))
+  expect_true(grepl("\n$", encoded))
+  parsed <- parse_yaml(encoded, multi = TRUE)
+  expect_identical(parsed, docs)
+})
+
+test_that("encode_yaml single-document output has no header or trailing newline", {
+  encoded <- encode_yaml(list(foo = 1L))
+  expect_false(startsWith(encoded, "---"))
+  expect_false(grepl("\n$", encoded))
+})
+
 test_that("encode_yaml validates yaml_tag attribute shape", {
   tagged <- structure("value", yaml_tag = c("!a", "!b"))
   expect_error(
@@ -42,6 +58,14 @@ test_that("encode_yaml validates yaml_tag attribute shape", {
   expect_error(
     encode_yaml(bad_type),
     "Invalid `yaml_tag` attribute: expected a single, non-missing string"
+  )
+})
+
+test_that("encode_yaml errors clearly when multi = TRUE without a list", {
+  expect_error(
+    encode_yaml(1L, multi = TRUE),
+    "`value` must be a list when `multi = TRUE`",
+    fixed = TRUE
   )
 })
 

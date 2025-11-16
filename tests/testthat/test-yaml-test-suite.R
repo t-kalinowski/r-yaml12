@@ -57,23 +57,40 @@ load_suite_cases <- function(suite_dir) {
 
   for (path in files) {
     raw <- paste(readLines(path, warn = FALSE), collapse = "\n")
-    parsed <- try(parse_yaml(raw), silent = TRUE)
+    parsed <- try(parse_yaml(raw, multi = TRUE), silent = TRUE)
     if (inherits(parsed, "try-error") || !length(parsed)) {
       next
     }
 
-    for (idx in seq_along(parsed)) {
-      entry <- parsed[[idx]]
-      snippet <- entry$yaml %||% entry$input %||% entry$data
-      if (is.null(snippet)) {
+    case_index <- 0
+    docs <- if (is.list(parsed) && is.null(names(parsed))) {
+      parsed
+    } else {
+      list(parsed)
+    }
+
+    for (doc in docs) {
+      if (!length(doc)) {
         next
       }
+      entries <- if (is.list(doc) && is.null(names(doc))) doc else list(doc)
 
-      cases[[length(cases) + 1]] <- list(
-        case_id = sprintf("%s#%d", basename(path), idx),
-        entry = entry,
-        snippet = snippet
-      )
+      for (entry in entries) {
+        if (!is.list(entry) || !length(entry)) {
+          next
+        }
+        snippet <- entry$yaml %||% entry$input %||% entry$data
+        if (is.null(snippet)) {
+          next
+        }
+
+        case_index <- case_index + 1
+        cases[[length(cases) + 1]] <- list(
+          case_id = sprintf("%s#%d", basename(path), case_index),
+          entry = entry,
+          snippet = snippet
+        )
+      }
     }
   }
 
@@ -212,7 +229,7 @@ if (!jsonlite_available) {
             grepl("fail|error|invalid", tolower(entry$tags %||% ""))
 
           if (expect_fail) {
-            expect_error(parse_yaml(snippet), info = case_id)
+            expect_error(parse_yaml(snippet, multi = TRUE), info = case_id)
             return()
           }
 

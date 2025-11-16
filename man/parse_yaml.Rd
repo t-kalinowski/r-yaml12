@@ -2,12 +2,14 @@
 % Please edit documentation in R/extendr-wrappers.R
 \name{parse_yaml}
 \alias{parse_yaml}
-\title{Parse a single YAML 1.2 document into base R structures.}
+\title{Parse YAML 1.2 document(s) into base R structures.}
 \usage{
-parse_yaml(text)
+parse_yaml(text, multi = FALSE)
 }
 \arguments{
 \item{text}{Character vector; elements are concatenated with \code{"\\n"}.}
+
+\item{multi}{When \code{TRUE}, return a list containing all documents in the stream.}
 }
 \description{
 Supports scalars, sequences, and mappings; YAML tags are preserved in a

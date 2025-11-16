@@ -4,10 +4,12 @@
 \alias{encode_yaml}
 \title{Encode an R object as YAML 1.2.}
 \usage{
-encode_yaml(value)
+encode_yaml(value, multi = FALSE)
 }
 \arguments{
 \item{value}{Any R object composed of lists, atomic vectors, and scalars.}
+
+\item{multi}{When \code{TRUE}, treat \code{value} as a list of YAML documents and encode a stream.}
 }
 \value{
 A scalar character string containing YAML.

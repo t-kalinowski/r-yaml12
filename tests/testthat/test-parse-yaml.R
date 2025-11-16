@@ -35,7 +35,7 @@ bar: baz
   expect_error(parse_yaml(c("foo: 1", NA_character_)), "must not contain NA")
 })
 
-test_that("parse_yaml ignores additional documents", {
+test_that("parse_yaml handles multiple documents when requested", {
   yaml <- r"--(
 ---
 foo: 1
@@ -43,6 +43,41 @@ foo: 1
 bar: 2
 )--"
   expect_identical(parse_yaml(yaml), list(foo = 1L))
+  expect_identical(
+    parse_yaml(yaml, multi = TRUE),
+    list(list(foo = 1L), list(bar = 2L))
+  )
+})
+
+test_that("parse_yaml ignores errors in later documents when multi = FALSE", {
+  yaml <- r"--(
+---
+foo: 1
+...
+---
+not: [valid
+)--"
+  expect_identical(parse_yaml(yaml), list(foo = 1L))
+  expect_error(parse_yaml(yaml, multi = TRUE), "YAML parse error")
+})
+
+test_that("parse_yaml errors on NA strings regardless of position or length", {
+  expect_snapshot(error = TRUE, parse_yaml(NA_character_))
+  expect_snapshot(error = TRUE, parse_yaml(c(NA_character_, "foo: 1")))
+  expect_snapshot(error = TRUE, parse_yaml(c("foo: 1", NA_character_)))
+  expect_snapshot(error = TRUE, parse_yaml(NA))
+  expect_snapshot(error = TRUE, parse_yaml(NA_integer_))
+  expect_snapshot(error = TRUE, parse_yaml(NA_real_))
+  expect_snapshot(error = TRUE, parse_yaml(NA_complex_))
+  expect_identical(parse_yaml(character()), NULL)
+  expect_snapshot(
+    error = TRUE,
+    parse_yaml(c(NA_character_, NA_character_, "foo: 1"))
+  )
+  expect_snapshot(
+    error = TRUE,
+    parse_yaml(c("foo: 1", "bar: 2", NA_character_))
+  )
 })
 
 test_that("parse_yaml handles trailing newlines", {

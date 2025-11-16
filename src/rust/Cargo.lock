@@ -180,4 +180,5 @@ version = "0.1.0"
 dependencies = [
  "extendr-api",
  "saphyr",
+ "saphyr-parser",
 ]

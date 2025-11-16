@@ -3,7 +3,7 @@ name = 'yaml12'
 publish = false
 version = '0.1.0'
 edition = '2021'
-rust-version = '1.65'
+rust-version = '1.70'
 
 [lib]
 crate-type = [ 'staticlib' ]
@@ -12,6 +12,7 @@ name = 'yaml12'
 [dependencies]
 extendr-api = { git = 'https://github.com/extendr/extendr' }
 saphyr = "0.0.6"
+saphyr-parser = "0.0.6"
 
 [profile.release]
 lto = true

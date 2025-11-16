@@ -10,20 +10,22 @@
 #' @useDynLib yaml12, .registration = TRUE
 NULL
 
-#' Parse a single YAML 1.2 document into base R structures.
+#' Parse YAML 1.2 document(s) into base R structures.
 #'
 #' Supports scalars, sequences, and mappings; YAML tags are preserved in a
 #' `yaml_tag` attribute when possible. YAML aliases are rejected.
 #' @param text Character vector; elements are concatenated with `"\n"`.
+#' @param multi When `TRUE`, return a list containing all documents in the stream.
 #' @export
-parse_yaml <- function(text) .Call(wrap__parse_yaml, text)
+parse_yaml <- function(text, multi = FALSE) .Call(wrap__parse_yaml, text, multi)
 
 #' Encode an R object as YAML 1.2.
 #'
 #' @param value Any R object composed of lists, atomic vectors, and scalars.
+#' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 #' @return A scalar character string containing YAML.
 #' @export
-encode_yaml <- function(value) .Call(wrap__encode_yaml, value)
+encode_yaml <- function(value, multi = FALSE) .Call(wrap__encode_yaml, value, multi)
 
 
 # nolint end

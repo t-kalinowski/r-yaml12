@@ -1,6 +1,9 @@
 use extendr_api::prelude::*;
-use saphyr::{LoadableYamlNode, Mapping, Scalar, Tag, Yaml, YamlEmitter};
+use saphyr::{LoadableYamlNode, Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
+use saphyr_parser::Parser;
 use std::{borrow::Cow, cell::OnceCell, thread_local};
+
+const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 
 macro_rules! cached_sym {
     ($cell:ident, $name:ident, $getter:ident) => {
@@ -108,34 +111,28 @@ fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Robj {
     value
 }
 
-fn collapse_lines(text: &Strings) -> Result<String> {
-    let mut out = String::new();
-    for line in text.iter() {
-        if line.is_na() {
-            return Err(Error::Other(
-                "`text` must not contain NA strings".to_string(),
-            ));
-        }
-        out.push_str(line.as_ref());
-        out.push('\n');
+fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Result<String> {
+    if docs.is_empty() {
+        return Ok(String::new());
     }
-    out.pop();
-    Ok(out)
-}
-
-fn strip_document_marker(text: &str) -> &str {
-    text.strip_prefix("---\n").unwrap_or(text)
-}
-
-fn emit_yaml(doc: &Yaml<'static>) -> Result<String> {
     let mut output = String::new();
-    let mut emitter = YamlEmitter::new(&mut output);
-    emitter
-        .dump(doc)
-        .map_err(|err| Error::Other(err.to_string()))?;
-    let rendered = strip_document_marker(&output).to_string();
+    for doc in docs {
+        {
+            let mut emitter = YamlEmitter::new(&mut output);
+            emitter
+                .dump(doc)
+                .map_err(|err| Error::Other(err.to_string()))?;
+        }
+        output.push('\n');
+    }
+    let rendered = if multi {
+        output
+    } else {
+        let body = output.get(4..).unwrap_or("");
+        let body = body.strip_suffix('\n').unwrap_or(body);
+        body.to_owned()
+    };
     // R strings are limited to 2^31 - 1 bytes; error clearly if we would overflow.
-    const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
     if rendered.len() > R_STRING_MAX_BYTES {
         return Err(Error::Other(
             "Encoded YAML exceeds R's 2^31-1 byte string limit".to_string(),
@@ -325,39 +322,153 @@ fn parse_tag_string(tag: &str) -> Result<Tag> {
     }
 }
 
-fn parse_yaml_impl(text: Strings) -> Result<Robj> {
-    let joined = collapse_lines(&text)?;
-    let docs = Yaml::load_from_str(&joined)
-        .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
-    match docs.first() {
-        Some(doc) => {
-            yaml_to_robj(doc).map_err(|err| Error::Other(format!("Unsupported YAML: {err}")))
-        }
-        None => Ok(NULL.into()),
+fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Result<Vec<Yaml<'input>>> {
+    if multi {
+        Yaml::load_from_str(text).map_err(|err| Error::Other(format!("YAML parse error: {err}")))
+    } else {
+        let mut parser = Parser::new_from_str(text);
+        let mut loader = YamlLoader::default();
+        parser
+            .load(&mut loader, false)
+            .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
+        Ok(loader.into_documents())
     }
+}
+
+fn parse_yaml_impl(text: Strings, multi: bool) -> Result<Robj> {
+    match text.len() {
+        0 => Ok(NULL.into()),
+        1 => {
+            let first = text.elt(0);
+            if first.is_na() {
+                return Err(Error::Other(
+                    "`text` must not contain NA strings".to_string(),
+                ));
+            }
+            let docs = load_yaml_documents(first.as_ref(), multi)?;
+            docs_to_robj(docs, multi)
+        }
+        _ => {
+            let joined_iter = joined_lines_iter(&text)?;
+            let docs = load_yaml_documents_iter(joined_iter, multi)?;
+            docs_to_robj(docs, multi)
+        }
+    }
+}
+
+fn docs_to_robj(docs: Vec<Yaml<'_>>, multi: bool) -> Result<Robj> {
+    if multi {
+        let mut values = Vec::with_capacity(docs.len());
+        for doc in docs {
+            values.push(
+                yaml_to_robj(&doc)
+                    .map_err(|err| Error::Other(format!("Unsupported YAML: {err}")))?,
+            );
+        }
+        Ok(List::from_values(values).into())
+    } else {
+        match docs.first() {
+            Some(doc) => {
+                yaml_to_robj(doc).map_err(|err| Error::Other(format!("Unsupported YAML: {err}")))
+            }
+            None => Ok(NULL.into()),
+        }
+    }
+}
+
+fn joined_lines_iter<'a>(text: &'a Strings) -> Result<JoinedLinesIter<'a>> {
+    let mut lines = Vec::with_capacity(text.len());
+    for line in text.iter() {
+        if line.is_na() {
+            return Err(Error::Other(
+                "`text` must not contain NA strings".to_string(),
+            ));
+        }
+        lines.push(line.as_ref());
+    }
+    Ok(JoinedLinesIter::new(lines))
+}
+
+struct JoinedLinesIter<'a> {
+    lines: std::vec::IntoIter<&'a str>,
+    current: std::str::Chars<'a>,
+}
+
+impl<'a> JoinedLinesIter<'a> {
+    fn new(lines: Vec<&'a str>) -> Self {
+        let mut iter = lines.into_iter();
+        let current = iter.next().unwrap_or("").chars();
+        Self {
+            lines: iter,
+            current,
+        }
+    }
+}
+
+impl<'a> Iterator for JoinedLinesIter<'a> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ch) = self.current.next() {
+            return Some(ch);
+        }
+        if let Some(next_line) = self.lines.next() {
+            self.current = next_line.chars();
+            return Some('\n');
+        }
+        None
+    }
+}
+
+fn load_yaml_documents_iter<'input, I>(iter: I, multi: bool) -> Result<Vec<Yaml<'input>>>
+where
+    I: Iterator<Item = char> + 'input,
+{
+    let mut parser = Parser::new_from_iter(iter);
+    let mut loader = YamlLoader::default();
+    parser
+        .load(&mut loader, multi)
+        .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
+    Ok(loader.into_documents())
 }
 
 /// Encode an R object as YAML 1.2.
 ///
 /// @param value Any R object composed of lists, atomic vectors, and scalars.
+/// @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 /// @return A scalar character string containing YAML.
 /// @export
 #[extendr]
-fn encode_yaml(value: Robj) -> String {
-    robj_to_yaml(&value)
-        .and_then(|yaml| emit_yaml(&yaml))
-        .unwrap_or_else(|err| throw_r_error(err.to_string()))
+fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
+    if multi {
+        value
+            .as_list()
+            .ok_or_else(|| Error::Other("`value` must be a list when `multi = TRUE`".to_string()))
+            .and_then(|list| {
+                let mut docs = Vec::with_capacity(list.len());
+                for doc in list.values() {
+                    docs.push(robj_to_yaml(&doc)?);
+                }
+                emit_yaml_documents(&docs, true)
+            })
+            .unwrap_or_else(|err| throw_r_error(err.to_string()))
+    } else {
+        robj_to_yaml(&value)
+            .and_then(|yaml| emit_yaml_documents(&[yaml], false))
+            .unwrap_or_else(|err| throw_r_error(err.to_string()))
+    }
 }
 
-/// Parse a single YAML 1.2 document into base R structures.
+/// Parse YAML 1.2 document(s) into base R structures.
 ///
 /// Supports scalars, sequences, and mappings; YAML tags are preserved in a
 /// `yaml_tag` attribute when possible. YAML aliases are rejected.
 /// @param text Character vector; elements are concatenated with `"\n"`.
+/// @param multi When `TRUE`, return a list containing all documents in the stream.
 /// @export
 #[extendr]
-fn parse_yaml(text: Strings) -> Robj {
-    parse_yaml_impl(text).unwrap_or_else(|err| throw_r_error(err.to_string()))
+fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj {
+    parse_yaml_impl(text, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
 }
 
 // Macro to generate exports.
