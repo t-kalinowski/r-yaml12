@@ -80,6 +80,7 @@ fn mapping_to_robj(map: &Mapping) -> std::result::Result<Robj, String> {
 
 thread_local! {
     static YAML_KEYS_SYM: OnceCell<Robj> = OnceCell::new();
+    static YAML_TAG_SYM: OnceCell<Robj> = OnceCell::new();
 }
 
 fn convert_tagged(tag: &Tag, node: &Yaml) -> std::result::Result<Robj, String> {
@@ -88,12 +89,14 @@ fn convert_tagged(tag: &Tag, node: &Yaml) -> std::result::Result<Robj, String> {
 }
 
 fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Robj {
-    if !tag.is_empty()
-        && value
-            .set_attrib("yaml_tag", Robj::from(tag.to_string()))
-            .is_err()
-    {
-        // ignore types that cannot carry attributes
+    if !tag.is_empty() {
+        YAML_TAG_SYM.with(|cell| {
+            let sym = cell.get_or_init(|| sym!(yaml_tag));
+            let res = value.set_attrib(sym, Robj::from(tag.to_string()));
+            if res.is_err() {
+                // ignore types that cannot carry attributes
+            }
+        });
     }
     value
 }
