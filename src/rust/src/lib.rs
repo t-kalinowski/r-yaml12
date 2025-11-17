@@ -117,6 +117,7 @@ fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Result<String> {
     }
     let mut output = String::new();
     let mut emitter = YamlEmitter::new(&mut output);
+    emitter.multiline_strings(true);
     if multi {
         emitter
             .dump_docs(docs)
