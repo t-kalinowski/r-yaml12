@@ -87,7 +87,7 @@ load_suite_cases <- function(suite_dir) {
       entries <- if (is.list(doc) && is.null(names(doc))) doc else list(doc)
 
       for (entry in entries) {
-        if (!is.list(entry) || !length(entry)) {
+        if (!is.list(entry) || !length(entry) || isTRUE(entry$skip)) {
           next
         }
         snippet <- entry$yaml %||% entry$input %||% entry$data
@@ -133,70 +133,9 @@ if (!jsonlite_available) {
       skip("No yaml-test-suite cases found")
     })
   } else {
-    skip_parse_cases <- c(
-      "4EJS.yaml#1",
-      "26DV.yaml#1",
-      "2G84.yaml#3",
-      "2G84.yaml#4",
-      "3RLN.yaml#2",
-      "3RLN.yaml#5",
-      "4Q9F.yaml#1",
-      "4QFQ.yaml#1",
-      "4RWC.yaml#1",
-      "5GBF.yaml#1",
-      "6BCT.yaml#1",
-      "6FWR.yaml#1",
-      "6HB6.yaml#1",
-      "753E.yaml#1",
-      "93WF.yaml#1",
-      "B3HG.yaml#1",
-      "DC7X.yaml#1",
-      "DE56.yaml#3",
-      "DE56.yaml#4",
-      "DK95.yaml#4",
-      "DK95.yaml#5",
-      "DK95.yaml#8",
-      "DK95.yaml#7",
-      "F8F9.yaml#1",
-      "FH7J.yaml#1",
-      "G992.yaml#1",
-      "H2RW.yaml#1",
-      "J3BT.yaml#1",
-      "JEF9.yaml#1",
-      "JEF9.yaml#2",
-      "JEF9.yaml#3",
-      "K527.yaml#1",
-      "K858.yaml#1",
-      "KH5V.yaml#2",
-      "L24T.yaml#1",
-      "L24T.yaml#2",
-      "M29M.yaml#1",
-      "M9B4.yaml#1",
-      "MJS9.yaml#1",
-      "MUS6.yaml#4",
-      "MYW6.yaml#1",
-      "NHX8.yaml#1",
-      "P94K.yaml#1",
-      "R4YG.yaml#1",
-      "T5N4.yaml#1",
-      "TS54.yaml#1",
-      "XV9V.yaml#1",
-      "Y79Y.yaml#5",
-      "Y79Y.yaml#6",
-      "Y79Y.yaml#7",
-      "Y79Y.yaml#9",
-      "Y79Y.yaml#10",
-      "Y79Y.yaml#3",
-      "ZYU8.yaml#1",
-      "ZYU8.yaml#2",
-      "ZYU8.yaml#3"
-    )
+    skip_parse_cases <- c("FH7J.yaml#1", "ZYU8.yaml#1", "ZYU8.yaml#2")
 
-    skip_compare_cases <- c(
-      "6KGN.yaml#1",
-      "RR7F.yaml#1",
-      "S4JQ.yaml#1"
-    )
+    skip_compare_cases <- c("6KGN.yaml#1", "RR7F.yaml#1", "S4JQ.yaml#1")
 
     for (case in suite_cases) {
       local({
