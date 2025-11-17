@@ -1,5 +1,5 @@
 use extendr_api::prelude::*;
-use saphyr::{LoadableYamlNode, Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
+use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
 use saphyr_parser::Parser;
 use std::{borrow::Cow, cell::OnceCell, fs, thread_local};
 
@@ -24,20 +24,15 @@ fn yaml_to_robj(node: &Yaml) -> Result<Robj> {
         Yaml::Tagged(tag, inner) => convert_tagged(tag, inner),
         Yaml::Sequence(seq) => sequence_to_robj(seq),
         Yaml::Mapping(map) => mapping_to_robj(map),
-        Yaml::Representation(raw, _, maybe_tag) => {
-            let value = r!(raw.as_ref());
-            if let Some(tag) = maybe_tag {
-                Ok(set_yaml_tag_attr(value, &format!("{tag}")))
-            } else {
-                Ok(value)
-            }
-        }
         Yaml::Alias(_) => Err(Error::Other(
             "YAML aliases are not supported by yaml12".to_string(),
         )),
         Yaml::BadValue => Err(Error::Other(
             "Encountered an invalid YAML scalar value".to_string(),
         )),
+        Yaml::Representation(_, _, _) => {
+            unreachable!("Unexpected Yaml::Representation; loader runs with early_parse(true)")
+        }
     }
 }
 
@@ -98,17 +93,56 @@ cached_sym!(YAML_TAG_SYM, yaml_tag, sym_yaml_tag);
 
 fn convert_tagged(tag: &Tag, node: &Yaml) -> Result<Robj> {
     let value = yaml_to_robj(node)?;
-    Ok(set_yaml_tag_attr(value, &format!("{tag}")))
+    set_yaml_tag_attr(value, &format!("{tag}"))
 }
 
-fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Robj {
-    if !tag.is_empty() {
-        let res = value.set_attrib(sym_yaml_tag(), Robj::from(tag.to_string()));
-        if res.is_err() {
-            // ignore types that cannot carry attributes
-        }
+fn is_canonical_null_tag(tag: &str) -> bool {
+    // Enumerate all variants that should be treated as the canonical null tag
+    const NULL_TAGS: &[&str] = &[
+        "null",
+        "!null",
+        "!!null",
+        "!!!null",
+        "<null>",
+        "!<null>",
+        "<!null>",
+        "!<!null>",
+        "<!!null>",
+        "!<!!null>",
+        "tag:yaml.org,2002:null",
+        "!tag:yaml.org,2002:null",
+        "<tag:yaml.org,2002:null>",
+        "!<tag:yaml.org,2002:null>",
+    ];
+
+    NULL_TAGS.contains(&tag.trim())
+}
+
+fn emit_warning(message: &str) -> Result<()> {
+    let lang = lang!("warning", message);
+    lang.eval()
+        .map(|_| ())
+        .map_err(|err| Error::Other(err.to_string()))
+}
+
+fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Result<Robj> {
+    // R NULL cannot carry attributes; skip instead of erroring and panicking
+    if tag.is_empty() {
+        return Ok(value);
     }
-    value
+
+    if value.is_null() {
+        if !is_canonical_null_tag(tag) {
+            let warn_msg = format!(
+                "yaml12: discarding tag `{tag}` on null scalar; R NULL cannot carry attributes"
+            );
+            emit_warning(&warn_msg)?;
+        }
+        return Ok(value);
+    }
+
+    value.set_attrib(sym_yaml_tag(), tag)?;
+    Ok(value)
 }
 
 fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Result<String> {
@@ -318,16 +352,12 @@ fn parse_tag_string(tag: &str) -> Result<Tag> {
 }
 
 fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Result<Vec<Yaml<'input>>> {
-    if multi {
-        Yaml::load_from_str(text).map_err(|err| Error::Other(format!("YAML parse error: {err}")))
-    } else {
-        let mut parser = Parser::new_from_str(text);
-        let mut loader = YamlLoader::default();
-        parser
-            .load(&mut loader, false)
-            .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
-        Ok(loader.into_documents())
-    }
+    let mut parser = Parser::new_from_str(text);
+    let mut loader = YamlLoader::default();
+    parser
+        .load(&mut loader, multi)
+        .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
+    Ok(loader.into_documents())
 }
 
 fn parse_yaml_impl(text: Strings, multi: bool) -> Result<Robj> {
