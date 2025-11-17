@@ -18,7 +18,8 @@ SEXP unwind_protect_wrapper(SEXP (*fun)(void *data), void *data) {
     PROTECT(token);
     jmp_buf jmpbuf;
     if (setjmp(jmpbuf)) {
-        // tag pointer with low bit so rust can detect jump
+        // keep token alive; tag pointer with low bit so Rust can detect jump
+        R_PreserveObject(token);
         UNPROTECT(1);
         return (SEXP)((uintptr_t)token | 1);
     }

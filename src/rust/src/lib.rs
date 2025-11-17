@@ -1,25 +1,26 @@
 mod unwind;
 mod warning;
 
-use crate::unwind::{Fallible, RUnwindError};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
 use saphyr_parser::Parser;
 use std::{borrow::Cow, cell::OnceCell, fs, thread_local};
+use std::result::Result as StdResult;
+use unwind::EvalError;
 use warning::emit_warning;
 
 const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
+type Fallible<T> = StdResult<T, EvalError>;
 
-fn unwrap_or_resume<T>(res: Fallible<T>) -> T {
-    match res {
-        Ok(val) => val,
-        Err(RUnwindError::Jump(token)) => unsafe { token.resume() },
-        Err(RUnwindError::Api(err)) => throw_r_error(err.to_string()),
-    }
+fn api_other(msg: impl Into<String>) -> EvalError {
+    EvalError::Api(Error::Other(msg.into()))
 }
 
-fn api_other(msg: impl Into<String>) -> RUnwindError {
-    Error::Other(msg.into()).into()
+fn handle_eval_error<T>(err: EvalError) -> T {
+    match err {
+        EvalError::Jump(token) => unsafe { token.resume() },
+        EvalError::Api(err) => throw_r_error(err.to_string()),
+    }
 }
 
 macro_rules! cached_sym {
@@ -161,17 +162,17 @@ fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Fallible<String> 
     if multi {
         emitter
             .dump_docs(docs)
-            .map_err(|err| Error::Other(err.to_string()))?;
+            .map_err(|err| api_other(err.to_string()))?;
     } else {
         emitter
             .dump_with_document_start(&docs[0], false)
-            .map_err(|err| Error::Other(err.to_string()))?;
+            .map_err(|err| api_other(err.to_string()))?;
     }
     // R strings are limited to 2^31 - 1 bytes; error clearly if we would overflow.
     if output.len() > R_STRING_MAX_BYTES {
-        return Err(
-            Error::Other("Encoded YAML exceeds R's 2^31-1 byte string limit".to_string()).into(),
-        );
+        return Err(api_other(
+            "Encoded YAML exceeds R's 2^31-1 byte string limit",
+        ));
     }
     Ok(output)
 }
@@ -184,11 +185,10 @@ fn robj_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
         Rtype::Doubles => real_to_yaml(robj),
         Rtype::Strings => character_to_yaml(robj),
         Rtype::List => list_to_yaml(robj),
-        _ => Err(Error::Other(format!(
+        _ => Err(api_other(format!(
             "Unsupported R type {rtype:?} for YAML conversion",
             rtype = robj.rtype()
-        ))
-        .into()),
+        ))),
     }?;
     apply_tag_if_present(robj, node)
 }
@@ -263,10 +263,9 @@ fn list_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
                 .try_into()
                 .map_err(|_| Error::Other("`yaml_keys` attribute must be a list".to_string()))?;
             if keys.len() != list.len() {
-                return Err(Error::Other(
-                    "`yaml_keys` attribute must have the same length as the list".to_string(),
-                )
-                .into());
+                return Err(api_other(
+                    "`yaml_keys` attribute must have the same length as the list",
+                ));
             }
             let mut mapping = Mapping::with_capacity(list.len());
             for ((_, value), (_, key)) in list.iter().zip(keys.iter()) {
@@ -307,12 +306,10 @@ fn sequence_or_scalar(values: Vec<Yaml<'static>>) -> Yaml<'static> {
     }
 }
 
-fn wrap_unsupported(err: RUnwindError) -> RUnwindError {
+fn wrap_unsupported(err: EvalError) -> EvalError {
     match err {
-        RUnwindError::Api(inner) => {
-            RUnwindError::Api(Error::Other(format!("Unsupported YAML: {inner}")))
-        }
-        jump => jump,
+        EvalError::Api(inner) => EvalError::Api(Error::Other(format!("Unsupported YAML: {inner}"))),
+        EvalError::Jump(token) => EvalError::Jump(token),
     }
 }
 
@@ -352,13 +349,13 @@ fn is_core_schema_tag(tag: &str) -> bool {
 
 fn parse_tag_string(tag: &str) -> Fallible<Tag> {
     if tag.is_empty() {
-        return Err(
-            Error::Other("`yaml_tag` attribute must not be the empty string".to_string()).into(),
-        );
+        return Err(api_other(
+            "`yaml_tag` attribute must not be the empty string",
+        ));
     }
     if let Some(pos) = tag.rfind('!') {
         if pos + 1 >= tag.len() {
-            return Err(Error::Other(format!("Invalid YAML tag `{tag}`")).into());
+            return Err(api_other(format!("Invalid YAML tag `{tag}`")));
         }
         let handle = &tag[..pos];
         let suffix = &tag[pos + 1..];
@@ -374,7 +371,7 @@ fn parse_tag_string(tag: &str) -> Fallible<Tag> {
             })
         }
     } else {
-        Err(Error::Other(format!("Invalid YAML tag `{tag}`")).into())
+        Err(api_other(format!("Invalid YAML tag `{tag}`")))
     }
 }
 
@@ -410,9 +407,7 @@ fn docs_to_robj(docs: Vec<Yaml<'_>>, multi: bool) -> Fallible<Robj> {
     if multi {
         let mut values = Vec::with_capacity(docs.len());
         for doc in docs {
-            values.push(
-                yaml_to_robj(&doc).map_err(wrap_unsupported)?,
-            );
+            values.push(yaml_to_robj(&doc).map_err(wrap_unsupported)?);
         }
         Ok(List::from_values(values).into())
     } else {
@@ -494,15 +489,14 @@ fn encode_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
 
 fn read_yaml_impl(path: &str, multi: bool) -> Fallible<Robj> {
     let contents = fs::read_to_string(path)
-        .map_err(|err| Error::Other(format!("Failed to read `{path}`: {err}")))?;
+        .map_err(|err| api_other(format!("Failed to read `{path}`: {err}")))?;
     let docs = load_yaml_documents(&contents, multi)?;
     docs_to_robj(docs, multi)
 }
 
 fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Fallible<()> {
     let yaml = encode_yaml_impl(value, multi)?;
-    fs::write(path, yaml)
-        .map_err(|err| Error::Other(format!("Failed to write `{path}`: {err}")))?;
+    fs::write(path, yaml).map_err(|err| api_other(format!("Failed to write `{path}`: {err}")))?;
     Ok(())
 }
 
@@ -514,7 +508,7 @@ fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Fallible<()> {
 /// @export
 #[extendr]
 fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
-    unwrap_or_resume(encode_yaml_impl(&value, multi))
+    encode_yaml_impl(&value, multi).unwrap_or_else(handle_eval_error)
 }
 
 /// Parse YAML 1.2 document(s) into base R structures.
@@ -526,7 +520,7 @@ fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String
 /// @export
 #[extendr]
 fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    unwrap_or_resume(parse_yaml_impl(text, multi))
+    parse_yaml_impl(text, multi).unwrap_or_else(handle_eval_error)
 }
 
 /// Read YAML 1.2 document(s) from a file path.
@@ -536,7 +530,7 @@ fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj 
 /// @export
 #[extendr]
 fn read_yaml(path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    unwrap_or_resume(read_yaml_impl(path, multi))
+    read_yaml_impl(path, multi).unwrap_or_else(handle_eval_error)
 }
 
 /// Write an R object as YAML 1.2 to a file.
@@ -548,7 +542,7 @@ fn read_yaml(path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
 /// @export
 #[extendr]
 fn write_yaml(value: Robj, path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    unwrap_or_resume(write_yaml_impl(&value, path, multi));
+    write_yaml_impl(&value, path, multi).unwrap_or_else(handle_eval_error);
     NULL.into()
 }
 

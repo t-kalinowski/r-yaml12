@@ -1,6 +1,5 @@
 use extendr_api::prelude::*;
 use extendr_ffi as ffi;
-use std::fmt;
 use std::os::raw::c_void;
 use std::result::Result as StdResult;
 
@@ -33,30 +32,8 @@ impl LongjmpToken {
     }
 }
 
-#[derive(Debug)]
-pub enum RUnwindError {
-    Api(Error),
-    Jump(LongjmpToken),
-}
-
-impl From<Error> for RUnwindError {
-    fn from(err: Error) -> Self {
-        RUnwindError::Api(err)
-    }
-}
-
-impl fmt::Display for RUnwindError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RUnwindError::Api(err) => write!(f, "{err}"),
-            RUnwindError::Jump(_) => write!(f, "R longjmp"),
-        }
-    }
-}
-
-pub type Fallible<T> = StdResult<T, RUnwindError>;
-
-pub fn run_with_unwind_protect<F>(f: F) -> Fallible<()>
+/// Run f inside R_UnwindProtect; returns Err when R longjmps.
+pub fn run_with_unwind_protect<F>(f: F) -> StdResult<(), LongjmpToken>
 where
     F: FnOnce() + Copy,
 {
@@ -73,8 +50,20 @@ where
     let f_ptr = &f as *const F as *mut c_void;
     let res = unsafe { unwind_protect_wrapper(Some(trampoline::<F>), f_ptr) };
     if (res as usize & 1) == 1 {
-        Err(RUnwindError::Jump(LongjmpToken::from_tagged_ptr(res)))
+        Err(LongjmpToken::from_tagged_ptr(res))
     } else {
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum EvalError {
+    Api(Error),
+    Jump(LongjmpToken),
+}
+
+impl From<Error> for EvalError {
+    fn from(err: Error) -> Self {
+        EvalError::Api(err)
     }
 }
