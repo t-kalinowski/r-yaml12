@@ -1,5 +1,7 @@
+mod unwind;
 mod warning;
 
+use crate::unwind::{Fallible, RUnwindError};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
 use saphyr_parser::Parser;
@@ -7,6 +9,14 @@ use std::{borrow::Cow, cell::OnceCell, fs, thread_local};
 use warning::emit_warning;
 
 const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
+
+fn unwrap_or_resume<T>(res: Fallible<T>) -> T {
+    match res {
+        Ok(val) => val,
+        Err(RUnwindError::Jump(token)) => unsafe { token.resume() },
+        Err(RUnwindError::Api(err)) => throw_r_error(err.to_string()),
+    }
+}
 
 macro_rules! cached_sym {
     ($cell:ident, $name:ident, $getter:ident) => {
@@ -21,18 +31,18 @@ macro_rules! cached_sym {
     };
 }
 
-fn yaml_to_robj(node: &Yaml) -> Result<Robj> {
+fn yaml_to_robj(node: &Yaml) -> Fallible<Robj> {
     match node {
         Yaml::Value(scalar) => Ok(scalar_to_robj(scalar)),
         Yaml::Tagged(tag, inner) => convert_tagged(tag, inner),
         Yaml::Sequence(seq) => sequence_to_robj(seq),
         Yaml::Mapping(map) => mapping_to_robj(map),
-        Yaml::Alias(_) => Err(Error::Other(
-            "YAML aliases are not supported by yaml12".to_string(),
-        )),
-        Yaml::BadValue => Err(Error::Other(
-            "Encountered an invalid YAML scalar value".to_string(),
-        )),
+        Yaml::Alias(_) => {
+            Err(Error::Other("YAML aliases are not supported by yaml12".to_string()).into())
+        }
+        Yaml::BadValue => {
+            Err(Error::Other("Encountered an invalid YAML scalar value".to_string()).into())
+        }
         Yaml::Representation(_, _, _) => {
             unreachable!("Unexpected Yaml::Representation; loader runs with early_parse(true)")
         }
@@ -55,7 +65,7 @@ fn scalar_to_robj(scalar: &Scalar) -> Robj {
     }
 }
 
-fn sequence_to_robj(seq: &[Yaml]) -> Result<Robj> {
+fn sequence_to_robj(seq: &[Yaml]) -> Fallible<Robj> {
     let mut values = Vec::with_capacity(seq.len());
     for node in seq {
         values.push(yaml_to_robj(node)?);
@@ -63,7 +73,7 @@ fn sequence_to_robj(seq: &[Yaml]) -> Result<Robj> {
     Ok(List::from_values(values).into())
 }
 
-fn mapping_to_robj(map: &Mapping) -> Result<Robj> {
+fn mapping_to_robj(map: &Mapping) -> Fallible<Robj> {
     let mut names: Vec<&str> = Vec::with_capacity(map.len());
     let mut values = Vec::with_capacity(map.len());
     let mut has_non_string_key = false;
@@ -77,8 +87,8 @@ fn mapping_to_robj(map: &Mapping) -> Result<Robj> {
         }
         values.push(yaml_to_robj(value)?);
     }
-    let mut list =
-        List::from_names_and_values(&names, values.into_iter()).map_err(|err| err.to_string())?;
+    let mut list = List::from_names_and_values(&names, values.into_iter())
+        .map_err(|err| Error::Other(err.to_string()))?;
     if has_non_string_key {
         let mut key_values = Vec::with_capacity(map.len());
         for (key, _) in map.iter() {
@@ -86,7 +96,7 @@ fn mapping_to_robj(map: &Mapping) -> Result<Robj> {
         }
         let yaml_keys = List::from_values(key_values);
         list.set_attrib(sym_yaml_keys(), yaml_keys)
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| Error::Other(err.to_string()))?;
     }
     Ok(list.into())
 }
@@ -94,7 +104,7 @@ fn mapping_to_robj(map: &Mapping) -> Result<Robj> {
 cached_sym!(YAML_KEYS_SYM, yaml_keys, sym_yaml_keys);
 cached_sym!(YAML_TAG_SYM, yaml_tag, sym_yaml_tag);
 
-fn convert_tagged(tag: &Tag, node: &Yaml) -> Result<Robj> {
+fn convert_tagged(tag: &Tag, node: &Yaml) -> Fallible<Robj> {
     let value = yaml_to_robj(node)?;
     set_yaml_tag_attr(value, &format!("{tag}"))
 }
@@ -121,7 +131,7 @@ fn is_canonical_null_tag(tag: &str) -> bool {
     NULL_TAGS.contains(&tag.trim())
 }
 
-fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Result<Robj> {
+fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Fallible<Robj> {
     // R NULL cannot carry attributes; skip instead of erroring and panicking
     if tag.is_empty() {
         return Ok(value);
@@ -141,7 +151,7 @@ fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Result<Robj> {
     Ok(value)
 }
 
-fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Result<String> {
+fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Fallible<String> {
     if docs.is_empty() {
         return Ok(String::new());
     }
@@ -159,14 +169,14 @@ fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Result<String> {
     }
     // R strings are limited to 2^31 - 1 bytes; error clearly if we would overflow.
     if output.len() > R_STRING_MAX_BYTES {
-        return Err(Error::Other(
-            "Encoded YAML exceeds R's 2^31-1 byte string limit".to_string(),
-        ));
+        return Err(
+            Error::Other("Encoded YAML exceeds R's 2^31-1 byte string limit".to_string()).into(),
+        );
     }
     Ok(output)
 }
 
-fn robj_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn robj_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let node = match robj.rtype() {
         Rtype::Null => Ok(Yaml::Value(Scalar::Null)),
         Rtype::Logicals => logical_to_yaml(robj),
@@ -177,12 +187,13 @@ fn robj_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
         _ => Err(Error::Other(format!(
             "Unsupported R type {rtype:?} for YAML conversion",
             rtype = robj.rtype()
-        ))),
+        ))
+        .into()),
     }?;
     apply_tag_if_present(robj, node)
 }
 
-fn logical_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn logical_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let slice = robj
         .as_logical_slice()
         .ok_or_else(|| Error::Other("Expected a logical vector".to_string()))?;
@@ -197,7 +208,7 @@ fn logical_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
     Ok(sequence_or_scalar(values))
 }
 
-fn integer_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn integer_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let slice = robj
         .as_integer_slice()
         .ok_or_else(|| Error::Other("Expected an integer vector".to_string()))?;
@@ -212,7 +223,7 @@ fn integer_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
     Ok(sequence_or_scalar(values))
 }
 
-fn real_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn real_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let slice = robj
         .as_real_slice()
         .ok_or_else(|| Error::Other("Expected a numeric vector".to_string()))?;
@@ -227,7 +238,7 @@ fn real_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
     Ok(sequence_or_scalar(values))
 }
 
-fn character_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn character_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let strings = robj
         .as_str_iter()
         .ok_or_else(|| Error::Other("Expected a character vector".to_string()))?;
@@ -242,7 +253,7 @@ fn character_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
     Ok(sequence_or_scalar(values))
 }
 
-fn list_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
+fn list_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let list = robj
         .as_list()
         .ok_or_else(|| Error::Other("Expected a list".to_string()))?;
@@ -254,7 +265,8 @@ fn list_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
             if keys.len() != list.len() {
                 return Err(Error::Other(
                     "`yaml_keys` attribute must have the same length as the list".to_string(),
-                ));
+                )
+                .into());
             }
             let mut mapping = Mapping::with_capacity(list.len());
             for ((_, value), (_, key)) in list.iter().zip(keys.iter()) {
@@ -282,7 +294,7 @@ fn list_to_yaml(robj: &Robj) -> Result<Yaml<'static>> {
                 .as_slice()
                 .iter()
                 .map(robj_to_yaml)
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Fallible<Vec<_>>>()?;
             Ok(Yaml::Sequence(seq))
         }
     }
@@ -295,7 +307,16 @@ fn sequence_or_scalar(values: Vec<Yaml<'static>>) -> Yaml<'static> {
     }
 }
 
-fn apply_tag_if_present(robj: &Robj, node: Yaml<'static>) -> Result<Yaml<'static>> {
+fn wrap_unsupported(err: RUnwindError) -> RUnwindError {
+    match err {
+        RUnwindError::Api(inner) => {
+            RUnwindError::Api(Error::Other(format!("Unsupported YAML: {inner}")))
+        }
+        jump => jump,
+    }
+}
+
+fn apply_tag_if_present(robj: &Robj, node: Yaml<'static>) -> Fallible<Yaml<'static>> {
     if let Some(tag) = extract_yaml_tag(robj)? {
         Ok(Yaml::Tagged(Cow::Owned(tag), Box::new(node)))
     } else {
@@ -303,7 +324,7 @@ fn apply_tag_if_present(robj: &Robj, node: Yaml<'static>) -> Result<Yaml<'static
     }
 }
 
-fn extract_yaml_tag(robj: &Robj) -> Result<Option<Tag>> {
+fn extract_yaml_tag(robj: &Robj) -> Fallible<Option<Tag>> {
     let attr = match robj.get_attrib(sym_yaml_tag()) {
         Some(value) => value,
         None => return Ok(None),
@@ -329,15 +350,15 @@ fn is_core_schema_tag(tag: &str) -> bool {
         || tag.starts_with("tag:yaml.org,2002:")
 }
 
-fn parse_tag_string(tag: &str) -> Result<Tag> {
+fn parse_tag_string(tag: &str) -> Fallible<Tag> {
     if tag.is_empty() {
-        return Err(Error::Other(
-            "`yaml_tag` attribute must not be the empty string".to_string(),
-        ));
+        return Err(
+            Error::Other("`yaml_tag` attribute must not be the empty string".to_string()).into(),
+        );
     }
     if let Some(pos) = tag.rfind('!') {
         if pos + 1 >= tag.len() {
-            return Err(Error::Other(format!("Invalid YAML tag `{tag}`")));
+            return Err(Error::Other(format!("Invalid YAML tag `{tag}`")).into());
         }
         let handle = &tag[..pos];
         let suffix = &tag[pos + 1..];
@@ -353,11 +374,11 @@ fn parse_tag_string(tag: &str) -> Result<Tag> {
             })
         }
     } else {
-        Err(Error::Other(format!("Invalid YAML tag `{tag}`")))
+        Err(Error::Other(format!("Invalid YAML tag `{tag}`")).into())
     }
 }
 
-fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Result<Vec<Yaml<'input>>> {
+fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Fallible<Vec<Yaml<'input>>> {
     let mut parser = Parser::new_from_str(text);
     let mut loader = YamlLoader::default();
     parser
@@ -366,15 +387,13 @@ fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Result<Vec<Yam
     Ok(loader.into_documents())
 }
 
-fn parse_yaml_impl(text: Strings, multi: bool) -> Result<Robj> {
+fn parse_yaml_impl(text: Strings, multi: bool) -> Fallible<Robj> {
     match text.len() {
         0 => Ok(NULL.into()),
         1 => {
             let first = text.elt(0);
             if first.is_na() {
-                return Err(Error::Other(
-                    "`text` must not contain NA strings".to_string(),
-                ));
+                return Err(Error::Other("`text` must not contain NA strings".to_string()).into());
             }
             let docs = load_yaml_documents(first.as_ref(), multi)?;
             docs_to_robj(docs, multi)
@@ -387,33 +406,28 @@ fn parse_yaml_impl(text: Strings, multi: bool) -> Result<Robj> {
     }
 }
 
-fn docs_to_robj(docs: Vec<Yaml<'_>>, multi: bool) -> Result<Robj> {
+fn docs_to_robj(docs: Vec<Yaml<'_>>, multi: bool) -> Fallible<Robj> {
     if multi {
         let mut values = Vec::with_capacity(docs.len());
         for doc in docs {
             values.push(
-                yaml_to_robj(&doc)
-                    .map_err(|err| Error::Other(format!("Unsupported YAML: {err}")))?,
+                yaml_to_robj(&doc).map_err(wrap_unsupported)?,
             );
         }
         Ok(List::from_values(values).into())
     } else {
         match docs.first() {
-            Some(doc) => {
-                yaml_to_robj(doc).map_err(|err| Error::Other(format!("Unsupported YAML: {err}")))
-            }
+            Some(doc) => yaml_to_robj(doc).map_err(wrap_unsupported),
             None => Ok(NULL.into()),
         }
     }
 }
 
-fn joined_lines_iter<'a>(text: &'a Strings) -> Result<JoinedLinesIter<'a>> {
+fn joined_lines_iter<'a>(text: &'a Strings) -> Fallible<JoinedLinesIter<'a>> {
     let mut lines = Vec::with_capacity(text.len());
     for line in text.iter() {
         if line.is_na() {
-            return Err(Error::Other(
-                "`text` must not contain NA strings".to_string(),
-            ));
+            return Err(Error::Other("`text` must not contain NA strings".to_string()).into());
         }
         lines.push(line.as_ref());
     }
@@ -451,7 +465,7 @@ impl<'a> Iterator for JoinedLinesIter<'a> {
     }
 }
 
-fn load_yaml_documents_iter<'input, I>(iter: I, multi: bool) -> Result<Vec<Yaml<'input>>>
+fn load_yaml_documents_iter<'input, I>(iter: I, multi: bool) -> Fallible<Vec<Yaml<'input>>>
 where
     I: Iterator<Item = char> + 'input,
 {
@@ -463,7 +477,7 @@ where
     Ok(loader.into_documents())
 }
 
-fn encode_yaml_impl(value: &Robj, multi: bool) -> Result<String> {
+fn encode_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
     if multi {
         let list = value.as_list().ok_or_else(|| {
             Error::Other("`value` must be a list when `multi = TRUE`".to_string())
@@ -478,14 +492,14 @@ fn encode_yaml_impl(value: &Robj, multi: bool) -> Result<String> {
     }
 }
 
-fn read_yaml_impl(path: &str, multi: bool) -> Result<Robj> {
+fn read_yaml_impl(path: &str, multi: bool) -> Fallible<Robj> {
     let contents = fs::read_to_string(path)
         .map_err(|err| Error::Other(format!("Failed to read `{path}`: {err}")))?;
     let docs = load_yaml_documents(&contents, multi)?;
     docs_to_robj(docs, multi)
 }
 
-fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Result<()> {
+fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Fallible<()> {
     let yaml = encode_yaml_impl(value, multi)?;
     fs::write(path, yaml)
         .map_err(|err| Error::Other(format!("Failed to write `{path}`: {err}")))?;
@@ -500,7 +514,7 @@ fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Result<()> {
 /// @export
 #[extendr]
 fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
-    encode_yaml_impl(&value, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
+    unwrap_or_resume(encode_yaml_impl(&value, multi))
 }
 
 /// Parse YAML 1.2 document(s) into base R structures.
@@ -512,7 +526,7 @@ fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String
 /// @export
 #[extendr]
 fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    parse_yaml_impl(text, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
+    unwrap_or_resume(parse_yaml_impl(text, multi))
 }
 
 /// Read YAML 1.2 document(s) from a file path.
@@ -522,7 +536,7 @@ fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj 
 /// @export
 #[extendr]
 fn read_yaml(path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    read_yaml_impl(path, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
+    unwrap_or_resume(read_yaml_impl(path, multi))
 }
 
 /// Write an R object as YAML 1.2 to a file.
@@ -534,7 +548,7 @@ fn read_yaml(path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
 /// @export
 #[extendr]
 fn write_yaml(value: Robj, path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
-    write_yaml_impl(&value, path, multi).unwrap_or_else(|err| throw_r_error(err.to_string()));
+    unwrap_or_resume(write_yaml_impl(&value, path, multi));
     NULL.into()
 }
 
