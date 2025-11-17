@@ -317,10 +317,20 @@ fn extract_yaml_tag(robj: &Robj) -> Result<Option<Tag>> {
             "Invalid `yaml_tag` attribute: expected a single, non-missing string ({err})"
         ))
     })?;
-    if tag_str.is_empty() {
+    let tag_str = tag_str.trim();
+    if tag_str.is_empty() || is_core_schema_tag(tag_str) {
         return Ok(None);
     }
     parse_tag_string(tag_str).map(Some)
+}
+
+fn is_core_schema_tag(tag: &str) -> bool {
+    let tag = tag.trim();
+    tag.starts_with("!!")
+        || tag.starts_with("!<tag:yaml.org,2002:")
+        || tag.starts_with("!tag:yaml.org,2002:")
+        || tag.starts_with("<tag:yaml.org,2002:")
+        || tag.starts_with("tag:yaml.org,2002:")
 }
 
 fn parse_tag_string(tag: &str) -> Result<Tag> {

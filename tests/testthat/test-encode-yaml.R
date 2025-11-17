@@ -31,6 +31,28 @@ test_that("encode_yaml preserves yaml_tag attribute", {
   expect_identical(attr(reparsed$seq, "yaml_tag"), "!seq")
 })
 
+test_that("encode_yaml ignores yaml_tag attributes using core schema handle", {
+  obj <- structure(
+    list(
+      scalar = structure("bar", yaml_tag = "!!seq"),
+      seq = structure(list(1L, 2L), yaml_tag = "!!map")
+    ),
+    yaml_tag = "!custom"
+  )
+
+  encoded <- encode_yaml(obj)
+  expect_false(grepl("!!seq", encoded, fixed = TRUE))
+  expect_false(grepl("!!map", encoded, fixed = TRUE))
+  expect_false(grepl("!seq", encoded, fixed = TRUE))
+  expect_false(grepl("!map", encoded, fixed = TRUE))
+  expect_true(grepl("!custom", encoded, fixed = TRUE))
+
+  reparsed <- parse_yaml(encoded)
+  expect_null(attr(reparsed$scalar, "yaml_tag", exact = TRUE))
+  expect_null(attr(reparsed$seq, "yaml_tag", exact = TRUE))
+  expect_identical(attr(reparsed, "yaml_tag", exact = TRUE), "!custom")
+})
+
 test_that("encode_yaml round-trips multi-document streams", {
   docs <- list(list(foo = 1L), list(bar = list(2L, NULL)))
   encoded <- encode_yaml(docs, multi = TRUE)
