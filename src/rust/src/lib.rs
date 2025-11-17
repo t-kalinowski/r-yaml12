@@ -1,7 +1,15 @@
 use extendr_api::prelude::*;
+use extendr_ffi as ffi;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
 use saphyr_parser::Parser;
-use std::{borrow::Cow, cell::OnceCell, fs, thread_local};
+use std::{
+    borrow::Cow,
+    cell::OnceCell,
+    ffi::CString,
+    fs,
+    os::raw::{c_char, c_void},
+    thread_local,
+};
 
 const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 
@@ -118,11 +126,62 @@ fn is_canonical_null_tag(tag: &str) -> bool {
     NULL_TAGS.contains(&tag.trim())
 }
 
+struct WarningState<'a> {
+    message: &'a CString,
+    had_error: bool,
+}
+
+#[allow(improper_ctypes)]
+extern "C" {
+    fn R_tryCatchError(
+        body: Option<unsafe extern "C" fn(*mut c_void) -> ffi::SEXP>,
+        body_data: *mut c_void,
+        handler: Option<unsafe extern "C" fn(ffi::SEXP, *mut c_void) -> ffi::SEXP>,
+        handler_data: *mut c_void,
+    ) -> ffi::SEXP;
+    fn Rf_warningcall(call: ffi::SEXP, format: *const c_char, ...);
+}
+
+unsafe extern "C" fn issue_warning_pointer(data: *mut c_void) -> ffi::SEXP {
+    let state = &*(data as *const WarningState);
+    Rf_warningcall(
+        ffi::R_NilValue,
+        b"%s\0".as_ptr() as *const c_char,
+        state.message.as_ptr(),
+    );
+    ffi::R_NilValue
+}
+
+unsafe extern "C" fn flag_warning_as_error(_err: ffi::SEXP, data: *mut c_void) -> ffi::SEXP {
+    let state = &mut *(data as *mut WarningState);
+    state.had_error = true;
+    ffi::R_NilValue
+}
+
 fn emit_warning(message: &str) -> Result<()> {
-    let lang = lang!("warning", message);
-    lang.eval()
-        .map(|_| ())
-        .map_err(|err| Error::Other(err.to_string()))
+    let c_message = CString::new(message)
+        .map_err(|_| Error::Other("Warning message contains interior nul byte".to_string()))?;
+    let mut state = WarningState {
+        message: &c_message,
+        had_error: false,
+    };
+
+    single_threaded(|| unsafe {
+        R_tryCatchError(
+            Some(issue_warning_pointer),
+            &mut state as *mut _ as *mut c_void,
+            Some(flag_warning_as_error),
+            &mut state as *mut _ as *mut c_void,
+        );
+    });
+
+    if state.had_error {
+        Err(Error::Other(format!(
+            "{message} (converted to error by options(warn))"
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn set_yaml_tag_attr(mut value: Robj, tag: &str) -> Result<Robj> {

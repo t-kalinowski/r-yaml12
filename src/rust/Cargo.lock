@@ -197,6 +197,7 @@ name = "yaml12"
 version = "0.1.0"
 dependencies = [
  "extendr-api",
+ "extendr-ffi",
  "saphyr",
  "saphyr-parser",
 ]

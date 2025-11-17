@@ -94,6 +94,17 @@ test_that("parse_yaml preserves YAML tags", {
   expect_identical(tagged$values, structure(list(1L, 2L), yaml_tag = "!seq"))
 })
 
+test_that("parse_yaml() warnings are catchable and respect options(warn)", {
+  expect_warning(parse_yaml("!custom null"), "yaml12: discarding tag")
+  expect_no_warning(suppressWarnings(parse_yaml("!custom null")))
+  expect_error(
+    withr::with_options(list(warn = 2L), parse_yaml("!custom null")),
+    "discarding tag"
+  )
+  expect_no_warning(parse_yaml("!!null null"))
+  expect_no_warning(parse_yaml("!<tag:yaml.org,2002:null> null"))
+})
+
 test_that("parse_yaml renders non-string mapping keys", {
   yaml <- r"--(
 1: a
