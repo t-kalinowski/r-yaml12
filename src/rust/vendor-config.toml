@@ -5,5 +5,10 @@ replace-with = "vendored-sources"
 git = "https://github.com/extendr/extendr"
 replace-with = "vendored-sources"
 
+[source."git+https://github.com/t-kalinowski/saphyr?branch=r-patched"]
+git = "https://github.com/t-kalinowski/saphyr"
+branch = "r-patched"
+replace-with = "vendored-sources"
+
 [source.vendored-sources]
 directory = "vendor"

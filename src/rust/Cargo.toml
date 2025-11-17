@@ -6,13 +6,13 @@ edition = '2021'
 rust-version = '1.70'
 
 [lib]
-crate-type = [ 'staticlib' ]
+crate-type = ['staticlib']
 name = 'yaml12'
 
 [dependencies]
 extendr-api = { git = 'https://github.com/extendr/extendr' }
-saphyr = "0.0.6"
-saphyr-parser = "0.0.6"
+saphyr = { git = "https://github.com/t-kalinowski/saphyr", branch = "r-patched" }
+saphyr-parser = { git = "https://github.com/t-kalinowski/saphyr", branch = "r-patched" }
 
 [profile.release]
 lto = true
