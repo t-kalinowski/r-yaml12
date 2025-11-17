@@ -2,4 +2,6 @@
 
 export(encode_yaml)
 export(parse_yaml)
+export(read_yaml)
+export(write_yaml)
 useDynLib(yaml12, .registration = TRUE)

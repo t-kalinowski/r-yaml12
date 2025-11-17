@@ -27,5 +27,21 @@ parse_yaml <- function(text, multi = FALSE) .Call(wrap__parse_yaml, text, multi)
 #' @export
 encode_yaml <- function(value, multi = FALSE) .Call(wrap__encode_yaml, value, multi)
 
+#' Read YAML 1.2 document(s) from a file path.
+#'
+#' @param path Scalar string path to a YAML file.
+#' @param multi When `TRUE`, return a list containing all documents in the stream.
+#' @export
+read_yaml <- function(path, multi = FALSE) .Call(wrap__read_yaml, path, multi)
+
+#' Write an R object as YAML 1.2 to a file.
+#'
+#' @param value Any R object composed of lists, atomic vectors, and scalars.
+#' @param path Scalar string file path to write YAML to.
+#' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
+#' @return Invisibly returns `NULL`.
+#' @export
+write_yaml <- function(value, path, multi = FALSE) .Call(wrap__write_yaml, value, path, multi)
+
 
 # nolint end

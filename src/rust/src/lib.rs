@@ -1,7 +1,7 @@
 use extendr_api::prelude::*;
 use saphyr::{LoadableYamlNode, Mapping, Scalar, Tag, Yaml, YamlEmitter, YamlLoader};
 use saphyr_parser::Parser;
-use std::{borrow::Cow, cell::OnceCell, thread_local};
+use std::{borrow::Cow, cell::OnceCell, fs, thread_local};
 
 const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 
@@ -427,6 +427,35 @@ where
     Ok(loader.into_documents())
 }
 
+fn encode_yaml_impl(value: &Robj, multi: bool) -> Result<String> {
+    if multi {
+        let list = value.as_list().ok_or_else(|| {
+            Error::Other("`value` must be a list when `multi = TRUE`".to_string())
+        })?;
+        let mut docs = Vec::with_capacity(list.len());
+        for doc in list.values() {
+            docs.push(robj_to_yaml(&doc)?);
+        }
+        emit_yaml_documents(&docs, true)
+    } else {
+        robj_to_yaml(value).and_then(|yaml| emit_yaml_documents(&[yaml], false))
+    }
+}
+
+fn read_yaml_impl(path: &str, multi: bool) -> Result<Robj> {
+    let contents = fs::read_to_string(path)
+        .map_err(|err| Error::Other(format!("Failed to read `{path}`: {err}")))?;
+    let docs = load_yaml_documents(&contents, multi)?;
+    docs_to_robj(docs, multi)
+}
+
+fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Result<()> {
+    let yaml = encode_yaml_impl(value, multi)?;
+    fs::write(path, yaml)
+        .map_err(|err| Error::Other(format!("Failed to write `{path}`: {err}")))?;
+    Ok(())
+}
+
 /// Encode an R object as YAML 1.2.
 ///
 /// @param value Any R object composed of lists, atomic vectors, and scalars.
@@ -435,23 +464,7 @@ where
 /// @export
 #[extendr]
 fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
-    if multi {
-        value
-            .as_list()
-            .ok_or_else(|| Error::Other("`value` must be a list when `multi = TRUE`".to_string()))
-            .and_then(|list| {
-                let mut docs = Vec::with_capacity(list.len());
-                for doc in list.values() {
-                    docs.push(robj_to_yaml(&doc)?);
-                }
-                emit_yaml_documents(&docs, true)
-            })
-            .unwrap_or_else(|err| throw_r_error(err.to_string()))
-    } else {
-        robj_to_yaml(&value)
-            .and_then(|yaml| emit_yaml_documents(&[yaml], false))
-            .unwrap_or_else(|err| throw_r_error(err.to_string()))
-    }
+    encode_yaml_impl(&value, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
 }
 
 /// Parse YAML 1.2 document(s) into base R structures.
@@ -466,6 +479,29 @@ fn parse_yaml(text: Strings, #[extendr(default = "FALSE")] multi: bool) -> Robj 
     parse_yaml_impl(text, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
 }
 
+/// Read YAML 1.2 document(s) from a file path.
+///
+/// @param path Scalar string path to a YAML file.
+/// @param multi When `TRUE`, return a list containing all documents in the stream.
+/// @export
+#[extendr]
+fn read_yaml(path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
+    read_yaml_impl(path, multi).unwrap_or_else(|err| throw_r_error(err.to_string()))
+}
+
+/// Write an R object as YAML 1.2 to a file.
+///
+/// @param value Any R object composed of lists, atomic vectors, and scalars.
+/// @param path Scalar string file path to write YAML to.
+/// @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
+/// @return Invisibly returns `NULL`.
+/// @export
+#[extendr]
+fn write_yaml(value: Robj, path: &str, #[extendr(default = "FALSE")] multi: bool) -> Robj {
+    write_yaml_impl(&value, path, multi).unwrap_or_else(|err| throw_r_error(err.to_string()));
+    NULL.into()
+}
+
 // Macro to generate exports.
 // This ensures exported functions are registered with R.
 // See corresponding C code in `entrypoint.c`.
@@ -473,4 +509,6 @@ extendr_module! {
     mod yaml12;
     fn parse_yaml;
     fn encode_yaml;
+    fn read_yaml;
+    fn write_yaml;
 }
