@@ -4,36 +4,50 @@ use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlLoader};
 use saphyr_parser::{Parser, ScalarStyle};
-use std::fs;
+use std::{borrow::Cow, fs, mem};
 
-fn resolve_representation(node: &mut Yaml, simplify: bool) {
-    if let Yaml::Representation(value, style, tag) = node {
-        let parsed = match &tag {
-            // Non-core schema tags always become Tagged nodes wrapping a
-            // string scalar; explicit tags on representation nodes are not
-            // subject to schema-based type resolution.
-            Some(tag) if !tag.is_yaml_core_schema() => Yaml::Tagged(
-                tag.clone(),
-                Box::new(Yaml::Value(Scalar::String(value.clone()))),
-            ),
-            // When not simplifying, even core-schema tags for the YAML string
-            // type should be preserved explicitly as Tagged nodes, so that
-            // callers can observe that the tag was written (e.g. `!!str` or
-            // `tag:yaml.org,2002:str`).
-            Some(tag) if !simplify && is_canonical_string_tag(tag) => Yaml::Tagged(
-                tag.clone(),
-                Box::new(Yaml::Value(Scalar::String(value.clone()))),
-            ),
-            // Plain, untagged, empty scalar nodes (including anchored ones) should be treated as
-            // null, matching Core Schema semantics and the yaml-test-suite expectations for
-            // empty anchors.
-            None if *style == ScalarStyle::Plain && value.trim().is_empty() => {
-                Yaml::Value(Scalar::Null)
+fn resolve_representation(node: &mut Yaml, _simplify: bool) {
+    let (value, style, tag) = match mem::replace(node, Yaml::BadValue) {
+        Yaml::Representation(value, style, tag) => (value, style, tag),
+        other => {
+            *node = other;
+            return;
+        }
+    };
+
+    let parsed = match tag {
+        Some(tag) => {
+            let owned_tag = tag.into_owned();
+            match classify_tag(&owned_tag) {
+                TagClass::Canonical(kind) => {
+                    if kind == CanonicalTagKind::CoreNull
+                        && style == ScalarStyle::Plain
+                        && value.trim().is_empty()
+                    {
+                        Yaml::Value(Scalar::Null)
+                    } else {
+                        let canonical_cow = Cow::Owned(make_canonical_tag(kind));
+                        Yaml::value_from_cow_and_metadata(
+                            value.clone(),
+                            style,
+                            Some(&canonical_cow),
+                        )
+                    }
+                }
+                TagClass::Core => {
+                    let core_cow = Cow::Owned(owned_tag.clone());
+                    Yaml::value_from_cow_and_metadata(value.clone(), style, Some(&core_cow))
+                }
+                TagClass::NonCore => Yaml::Tagged(
+                    Cow::Owned(owned_tag),
+                    Box::new(Yaml::Value(Scalar::String(value.clone()))),
+                ),
             }
-            _ => Yaml::value_from_cow_and_metadata(value.clone(), *style, tag.as_ref()),
-        };
-        *node = parsed;
-    }
+        }
+        None if style == ScalarStyle::Plain && value.trim().is_empty() => Yaml::Value(Scalar::Null),
+        None => Yaml::value_from_cow_and_metadata(value.clone(), style, None),
+    };
+    *node = parsed;
 }
 
 fn yaml_to_robj(node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
@@ -210,7 +224,10 @@ fn mapping_to_robj(map: &mut Mapping, simplify: bool) -> Fallible<Robj> {
                         names.push(name);
                         // Non-canonical tags carry information that must be preserved
                         // via `yaml_keys`; canonical string tags do not.
-                        if !is_canonical_string_tag(tag) {
+                        if !matches!(
+                            classify_tag(tag),
+                            TagClass::Canonical(CanonicalTagKind::CoreString)
+                        ) {
                             needs_yaml_keys_attr = true;
                         }
                     }
@@ -248,39 +265,63 @@ fn mapping_to_robj(map: &mut Mapping, simplify: bool) -> Fallible<Robj> {
 }
 
 fn convert_tagged(tag: &Tag, node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
-    if simplify && is_canonical_string_tag(tag) {
-        // When simplifying, tags that only assert the YAML string type are
-        // redundant; treat the node as an ordinary string value with no
-        // `yaml_tag` attribute.
-        return yaml_to_robj(node, simplify);
-    }
-
+    let is_canonical = matches!(classify_tag(tag), TagClass::Canonical(_));
     let value = yaml_to_robj(node, simplify)?;
+    if is_canonical {
+        return Ok(value);
+    }
     let tag_str = format!("{tag}");
     set_yaml_tag_attr(value, &tag_str)
 }
 
-fn is_canonical_string_tag(tag: &Tag) -> bool {
-    // Tags that are equivalent to the core YAML string tag and therefore do
-    // not carry additional semantic information beyond "this is a string".
-    const STRING_TAGS: &[&str] = &[
-        "str",
-        "!str",
-        "!!str",
-        "!!!str",
-        "<str>",
-        "!<str>",
-        "<!str>",
-        "!<!str>",
-        "<!!str>",
-        "!<!!str>",
-        "tag:yaml.org,2002:str",
-        "!tag:yaml.org,2002:str",
-        "<tag:yaml.org,2002:str>",
-        "!<tag:yaml.org,2002:str>",
-    ];
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum CanonicalTagKind {
+    CoreString,
+    CoreNull,
+}
 
-    STRING_TAGS.contains(&format!("{tag}").trim())
+enum TagClass {
+    Canonical(CanonicalTagKind),
+    Core,
+    NonCore,
+}
+
+fn canonical_tag_kind(tag: &Tag) -> Option<CanonicalTagKind> {
+    match (tag.handle.as_str(), tag.suffix.as_str()) {
+        ("tag:yaml.org,2002:", "str") => Some(CanonicalTagKind::CoreString),
+        ("!", "str") => Some(CanonicalTagKind::CoreString),
+        ("", "str") => Some(CanonicalTagKind::CoreString),
+        ("", "!str") => Some(CanonicalTagKind::CoreString),
+        ("", "!!str") => Some(CanonicalTagKind::CoreString),
+        ("", "tag:yaml.org,2002:str") => Some(CanonicalTagKind::CoreString),
+        ("tag:yaml.org,2002:", "null") => Some(CanonicalTagKind::CoreNull),
+        ("", "null") => Some(CanonicalTagKind::CoreNull),
+        ("", "!null") => Some(CanonicalTagKind::CoreNull),
+        ("", "!!null") => Some(CanonicalTagKind::CoreNull),
+        ("", "tag:yaml.org,2002:null") => Some(CanonicalTagKind::CoreNull),
+        _ => None,
+    }
+}
+
+fn classify_tag(tag: &Tag) -> TagClass {
+    if let Some(kind) = canonical_tag_kind(tag) {
+        TagClass::Canonical(kind)
+    } else if tag.is_yaml_core_schema() {
+        TagClass::Core
+    } else {
+        TagClass::NonCore
+    }
+}
+
+fn make_canonical_tag(kind: CanonicalTagKind) -> Tag {
+    let suffix = match kind {
+        CanonicalTagKind::CoreString => "str",
+        CanonicalTagKind::CoreNull => "null",
+    };
+    Tag {
+        handle: "tag:yaml.org,2002:".to_string(),
+        suffix: suffix.to_string(),
+    }
 }
 
 fn is_canonical_null_tag(tag: &str) -> bool {

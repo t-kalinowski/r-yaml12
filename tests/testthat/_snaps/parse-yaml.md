@@ -70,6 +70,22 @@
       Error in `parse_yaml()`:
       ! `text` must not contain NA strings
 
+# parse_yaml errors clearly on invalid canonical tags
+
+    Code
+      parse_yaml("!!int foo")
+    Condition
+      Error in `parse_yaml()`:
+      ! Unsupported YAML: Encountered an invalid YAML scalar value
+
+---
+
+    Code
+      parse_yaml("!!null foo")
+    Condition
+      Error in `parse_yaml()`:
+      ! Unsupported YAML: Encountered an invalid YAML scalar value
+
 # parse_yaml mapping key tags respect simplify flag
 
     Code

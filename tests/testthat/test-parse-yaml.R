@@ -119,6 +119,31 @@ test_that("parse_yaml() warnings are catchable and respect options(warn)", {
   expect_no_warning(parse_yaml("!<tag:yaml.org,2002:null> null"))
 })
 
+test_that("parse_yaml resolves all canonical null tag spellings", {
+  canonical_cases <- c(
+    "!!null ~",
+    "!<!!null> ~",
+    "!<tag:yaml.org,2002:null> ~"
+  )
+  for (yaml in canonical_cases) {
+    parsed <- parse_yaml(yaml, simplify = FALSE)
+    expect_identical(parsed, NULL)
+    expect_null(attr(parsed, "yaml_tag", exact = TRUE))
+  }
+
+  informative <- parse_yaml("!<!null> ~", simplify = FALSE)
+  expect_identical(informative, NULL)
+  expect_null(attr(informative, "yaml_tag", exact = TRUE))
+
+  custom <- parse_yaml("!null ~", simplify = FALSE)
+  expect_identical(custom, structure("~", yaml_tag = "!null"))
+})
+
+test_that("parse_yaml errors clearly on invalid canonical tags", {
+  expect_snapshot(error = TRUE, parse_yaml("!!int foo"))
+  expect_snapshot(error = TRUE, parse_yaml("!!null foo"))
+})
+
 test_that("parse_yaml renders non-string mapping keys", {
   yaml <- r"--(
 1: a
