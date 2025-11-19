@@ -207,3 +207,26 @@ test_that("roundtrip newline in short string scalar", {
   rt <- parse_yaml(encode_yaml(og))
   expect_identical(og, rt)
 })
+
+test_that("parse_yaml resolves simple anchors and aliases", {
+  yaml <- "a1: &DEFAULT\n  b1: 4\na2: *DEFAULT\n"
+
+  parsed <- parse_yaml(yaml, simplify = FALSE)
+
+  expect_identical(parsed$a1$b1, 4L)
+  expect_identical(parsed$a2$b1, 4L)
+})
+
+test_that("parse_yaml resolves anchors and aliases inside sequences", {
+  yaml <- r"--(
+- &A 1
+- 2
+- *A
+)--"
+
+  simplified <- parse_yaml(yaml, simplify = TRUE)
+  expect_identical(simplified, c(1L, 2L, 1L))
+
+  unsimplified <- parse_yaml(yaml, simplify = FALSE)
+  expect_identical(unsimplified, list(1L, 2L, 1L))
+})
