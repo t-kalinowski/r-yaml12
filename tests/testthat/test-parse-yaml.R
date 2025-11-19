@@ -213,7 +213,7 @@ test_that("parse_yaml preserves non-core tags on mapping keys via yaml_keys", {
   unsimplified <- parse_yaml(yaml, simplify = FALSE)
   expect_identical(unsimplified, expected)
 
-  encoded <- encode_yaml(unsimplified)
+  encoded <- format_yaml(unsimplified)
   roundtrip <- parse_yaml(encoded, simplify = FALSE)
   expect_identical(roundtrip, expected)
 
@@ -265,7 +265,7 @@ test_that("parse_yaml keeps sequences/mappings of length 1 as collections", {
 
 test_that("roundtrip newline in short string scalar", {
   og <- list(foo = "bar!\nbar!", baz = 42L)
-  rt <- parse_yaml(encode_yaml(og))
+  rt <- parse_yaml(format_yaml(og))
   expect_identical(og, rt)
 })
 

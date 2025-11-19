@@ -22,7 +22,7 @@ fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Fallible<String> 
     // R strings are limited to 2^31 - 1 bytes; error clearly if we would overflow.
     if output.len() > R_STRING_MAX_BYTES {
         return Err(api_other(
-            "Encoded YAML exceeds R's 2^31-1 byte string limit",
+            "Formatted YAML exceeds R's 2^31-1 byte string limit",
         ));
     }
     Ok(output)
@@ -219,7 +219,7 @@ fn parse_tag_string(tag: &str) -> Fallible<Tag> {
     }
 }
 
-pub(crate) fn encode_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
+pub(crate) fn format_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
     if multi {
         let list = value.as_list().ok_or_else(|| {
             Error::Other("`value` must be a list when `multi = TRUE`".to_string())
@@ -235,7 +235,7 @@ pub(crate) fn encode_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
 }
 
 pub(crate) fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Fallible<()> {
-    let yaml = encode_yaml_impl(value, multi)?;
+    let yaml = format_yaml_impl(value, multi)?;
     fs::write(path, yaml).map_err(|err| api_other(format!("Failed to write `{path}`: {err}")))?;
     Ok(())
 }

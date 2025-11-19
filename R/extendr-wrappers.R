@@ -13,20 +13,21 @@ NULL
 #' Parse YAML 1.2 document(s) into base R structures.
 #'
 #' Supports scalars, sequences, and mappings; YAML tags are preserved in a
-#' `yaml_tag` attribute when possible. YAML aliases are rejected.
+#' `yaml_tag` attribute when possible. YAML anchors and aliases are resolved
+#' by the parser, so aliases behave like copies of their target nodes.
 #' @param text Character vector; elements are concatenated with `"\n"`.
 #' @param multi When `TRUE`, return a list containing all documents in the stream.
 #' @param simplify When `FALSE`, keep YAML sequences as R lists instead of simplifying to atomic vectors.
 #' @export
 parse_yaml <- function(text, multi = FALSE, simplify = TRUE) .Call(wrap__parse_yaml, text, multi, simplify)
 
-#' Encode an R object as YAML 1.2.
+#' Format an R object as YAML 1.2.
 #'
 #' @param value Any R object composed of lists, atomic vectors, and scalars.
 #' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 #' @return A scalar character string containing YAML.
 #' @export
-encode_yaml <- function(value, multi = FALSE) .Call(wrap__encode_yaml, value, multi)
+format_yaml <- function(value, multi = FALSE) .Call(wrap__format_yaml, value, multi)
 
 #' Read YAML 1.2 document(s) from a file path.
 #'

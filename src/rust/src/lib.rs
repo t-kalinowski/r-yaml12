@@ -38,15 +38,15 @@ macro_rules! cached_sym {
 cached_sym!(YAML_KEYS_SYM, yaml_keys, sym_yaml_keys);
 cached_sym!(YAML_TAG_SYM, yaml_tag, sym_yaml_tag);
 
-/// Encode an R object as YAML 1.2.
+/// Format an R object as YAML 1.2.
 ///
 /// @param value Any R object composed of lists, atomic vectors, and scalars.
 /// @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 /// @return A scalar character string containing YAML.
 /// @export
 #[extendr]
-fn encode_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
-    r_to_yaml::encode_yaml_impl(&value, multi).unwrap_or_else(handle_eval_error)
+fn format_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
+    r_to_yaml::format_yaml_impl(&value, multi).unwrap_or_else(handle_eval_error)
 }
 
 /// Parse YAML 1.2 document(s) into base R structures.
@@ -101,7 +101,7 @@ fn write_yaml(value: Robj, path: &str, #[extendr(default = "FALSE")] multi: bool
 extendr_module! {
     mod yaml12;
     fn parse_yaml;
-    fn encode_yaml;
+    fn format_yaml;
     fn read_yaml;
     fn write_yaml;
 }

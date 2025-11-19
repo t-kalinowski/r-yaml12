@@ -15,5 +15,6 @@ parse_yaml(text, multi = FALSE, simplify = TRUE)
 }
 \description{
 Supports scalars, sequences, and mappings; YAML tags are preserved in a
-\code{yaml_tag} attribute when possible. YAML aliases are rejected.
+\code{yaml_tag} attribute when possible. YAML anchors and aliases are resolved
+by the parser, so aliases behave like copies of their target nodes.
 }
