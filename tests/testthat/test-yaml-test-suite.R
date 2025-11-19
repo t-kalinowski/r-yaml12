@@ -9,7 +9,6 @@ test_cases <- dirname(list.files(
 
 skip_cases <- c(
   "7FWL",
-  "RR7F",
   "UGM3",
   "FH7J",
   "name/tags-on-empty-scalars",
@@ -35,6 +34,17 @@ skip_cases <- c(
   "tags/unknown-tag/7FWL",
   "tags/unknown-tag/UGM3"
 )
+
+sort_named_lists <- function(x) {
+  if (!is.list(x)) {
+    return(x)
+  }
+  if (!is.null(nms <- names(x))) {
+    # Sort by names to make map comparisons order-insensitive
+    x <- x[order(nms)]
+  }
+  lapply(x, sort_named_lists)
+}
 
 # test_cases <- test_cases[!endsWith(test_cases, skip_cases)]
 
@@ -100,6 +110,10 @@ for (case in test_cases) {
       # attr(,"yaml_tag")
       # [1] "!!"
       parsed <- zap_yaml_tags(parsed)
+
+      # Sort names to make map comparisons order-insensitive
+      parsed <- sort_named_lists(parsed)
+      expected <- sort_named_lists(expected)
 
       expect_identical(parsed, expected)
 
