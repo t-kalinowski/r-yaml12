@@ -97,7 +97,7 @@ test_that("parse_yaml handles trailing newlines", {
 test_that("parse_yaml preserves YAML tags", {
   expect_identical(
     parse_yaml(r"--(!custom 3)--"),
-    structure(3L, yaml_tag = "!custom")
+    structure("3", yaml_tag = "!custom")
   )
 
   tagged <- parse_yaml(r"--(values: !seq [1, 2])--")
@@ -105,12 +105,16 @@ test_that("parse_yaml preserves YAML tags", {
 })
 
 test_that("parse_yaml() warnings are catchable and respect options(warn)", {
-  expect_warning(parse_yaml("!custom null"), "yaml12: discarding tag")
-  expect_no_warning(suppressWarnings(parse_yaml("!custom null")))
-  expect_error(
-    withr::with_options(list(warn = 2L), parse_yaml("!custom null")),
-    "discarding tag"
+  expect_no_warning(parse_yaml("!custom null"))
+  expect_identical(
+    parse_yaml("!custom null"),
+    structure("null", yaml_tag = "!custom")
   )
+  expect_no_warning(suppressWarnings(parse_yaml("!custom null")))
+  expect_no_error(withr::with_options(
+    list(warn = 2L),
+    parse_yaml("!custom null")
+  ))
   expect_no_warning(parse_yaml("!!null null"))
   expect_no_warning(parse_yaml("!<tag:yaml.org,2002:null> null"))
 })

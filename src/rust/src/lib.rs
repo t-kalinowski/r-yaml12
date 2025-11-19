@@ -36,16 +36,30 @@ macro_rules! cached_sym {
     };
 }
 
-fn yaml_to_robj(node: &Yaml, simplify: bool) -> Fallible<Robj> {
+fn resolve_representation(node: &mut Yaml) {
+    if let Yaml::Representation(value, style, tag) = node {
+        let parsed = match tag {
+            Some(tag) if !tag.is_yaml_core_schema() => Yaml::Tagged(
+                tag.clone(),
+                Box::new(Yaml::Value(Scalar::String(value.clone()))),
+            ),
+            _ => Yaml::value_from_cow_and_metadata(value.clone(), *style, tag.as_ref()),
+        };
+        *node = parsed;
+    }
+}
+
+fn yaml_to_robj(node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
     match node {
         Yaml::Value(scalar) => Ok(scalar_to_robj(scalar)),
-        Yaml::Tagged(tag, inner) => convert_tagged(tag, inner, simplify),
+        Yaml::Tagged(tag, inner) => convert_tagged(tag, inner.as_mut(), simplify),
         Yaml::Sequence(seq) => sequence_to_robj(seq, simplify),
         Yaml::Mapping(map) => mapping_to_robj(map, simplify),
         Yaml::Alias(_) => Err(api_other("YAML aliases are not supported by yaml12")),
         Yaml::BadValue => Err(api_other("Encountered an invalid YAML scalar value")),
         Yaml::Representation(_, _, _) => {
-            unreachable!("Unexpected Yaml::Representation; loader runs with early_parse(true)")
+            resolve_representation(node);
+            yaml_to_robj(node, simplify)
         }
     }
 }
@@ -66,7 +80,7 @@ fn scalar_to_robj(scalar: &Scalar) -> Robj {
     }
 }
 
-fn sequence_to_robj(seq: &[Yaml], simplify_seqs: bool) -> Fallible<Robj> {
+fn sequence_to_robj(seq: &mut [Yaml], simplify_seqs: bool) -> Fallible<Robj> {
     #[derive(Copy, Clone, PartialEq, Eq)]
     enum RVectorType {
         List,
@@ -80,7 +94,8 @@ fn sequence_to_robj(seq: &[Yaml], simplify_seqs: bool) -> Fallible<Robj> {
     let mut simplify = simplify_seqs;
 
     // iterate over the vec once to see if we can simplify, fail early/fast if not
-    for node in seq {
+    for node in seq.iter_mut() {
+        resolve_representation(node);
         match node {
             Yaml::Tagged(_, _) => {
                 simplify = false;
@@ -169,38 +184,54 @@ fn sequence_to_robj(seq: &[Yaml], simplify_seqs: bool) -> Fallible<Robj> {
     Ok(List::from_values(values).into())
 }
 
-fn mapping_to_robj(map: &Mapping, simplify: bool) -> Fallible<Robj> {
-    let mut names: Vec<&str> = Vec::with_capacity(map.len());
-    let mut values = Vec::with_capacity(map.len());
-    let mut has_non_string_key = false;
-    for (key, value) in map.iter() {
-        match key {
-            Yaml::Value(Scalar::String(value)) => names.push(value.as_ref()),
-            _ => {
-                names.push("");
-                has_non_string_key = true;
-            }
-        }
+fn mapping_to_robj(map: &mut Mapping, simplify: bool) -> Fallible<Robj> {
+    let len = map.len();
+
+    let mut values: Vec<Robj> = Vec::with_capacity(len);
+    let mut resolved_keys: Vec<Yaml> = Vec::with_capacity(len);
+
+    // 1st pass: resolve keys and collect values
+    for (key, value) in map.iter_mut() {
+        // iter_mut() only returns mut value, not mut key.
+        let mut resolved_key = key.clone();
+        resolve_representation(&mut resolved_key);
+
+        resolved_keys.push(resolved_key);
         values.push(yaml_to_robj(value, simplify)?);
     }
+
+    // 2nd pass: build names as &str from resolved_keys
+    let mut has_non_string_key = false;
+    let mut names: Vec<&str> = Vec::with_capacity(len);
+    for resolved_key in &resolved_keys {
+        if let Yaml::Value(Scalar::String(name)) = resolved_key {
+            names.push(name);
+        } else {
+            has_non_string_key = true;
+            names.push("");
+        }
+    }
+
     let mut list = List::from_names_and_values(&names, values.into_iter())
         .map_err(|err| api_other(err.to_string()))?;
+
     if has_non_string_key {
-        let mut key_values = Vec::with_capacity(map.len());
-        for (key, _) in map.iter() {
-            key_values.push(yaml_to_robj(key, simplify)?);
+        let mut yaml_keys = Vec::with_capacity(resolved_keys.len());
+        for mut key in resolved_keys {
+            yaml_keys.push(yaml_to_robj(&mut key, simplify)?);
         }
-        let yaml_keys = List::from_values(key_values);
+        let yaml_keys = List::from_values(yaml_keys);
         list.set_attrib(sym_yaml_keys(), yaml_keys)
             .map_err(|err| api_other(err.to_string()))?;
     }
+
     Ok(list.into())
 }
 
 cached_sym!(YAML_KEYS_SYM, yaml_keys, sym_yaml_keys);
 cached_sym!(YAML_TAG_SYM, yaml_tag, sym_yaml_tag);
 
-fn convert_tagged(tag: &Tag, node: &Yaml, simplify: bool) -> Fallible<Robj> {
+fn convert_tagged(tag: &Tag, node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
     let value = yaml_to_robj(node, simplify)?;
     set_yaml_tag_attr(value, &format!("{tag}"))
 }
@@ -473,6 +504,7 @@ fn parse_tag_string(tag: &str) -> Fallible<Tag> {
 fn load_yaml_documents<'input>(text: &'input str, multi: bool) -> Fallible<Vec<Yaml<'input>>> {
     let mut parser = Parser::new_from_str(text);
     let mut loader = YamlLoader::default();
+    loader.early_parse(false);
     parser
         .load(&mut loader, multi)
         .map_err(|err| api_other(format!("YAML parse error: {err}")))?;
@@ -498,15 +530,15 @@ fn parse_yaml_impl(text: Strings, multi: bool, simplify: bool) -> Fallible<Robj>
     }
 }
 
-fn docs_to_robj(docs: Vec<Yaml<'_>>, multi: bool, simplify: bool) -> Fallible<Robj> {
+fn docs_to_robj(mut docs: Vec<Yaml<'_>>, multi: bool, simplify: bool) -> Fallible<Robj> {
     if multi {
         let mut values = Vec::with_capacity(docs.len());
-        for doc in docs {
-            values.push(yaml_to_robj(&doc, simplify).map_err(wrap_unsupported)?);
+        for doc in docs.iter_mut() {
+            values.push(yaml_to_robj(doc, simplify).map_err(wrap_unsupported)?);
         }
         Ok(List::from_values(values).into())
     } else {
-        match docs.first() {
+        match docs.first_mut() {
             Some(doc) => yaml_to_robj(doc, simplify).map_err(wrap_unsupported),
             None => Ok(NULL.into()),
         }
@@ -561,6 +593,7 @@ where
 {
     let mut parser = Parser::new_from_iter(iter);
     let mut loader = YamlLoader::default();
+    loader.early_parse(false);
     parser
         .load(&mut loader, multi)
         .map_err(|err| Error::Other(format!("YAML parse error: {err}")))?;
