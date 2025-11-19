@@ -128,17 +128,13 @@ null: c
 )--"
   result <- parse_yaml(yaml)
 
-  expect_named(result, c("", "", "", ""))
-  expect_identical(result[[1]], "a")
-  expect_identical(result[[2]], "b")
-  expect_identical(result[[3]], "c")
-  expect_identical(result[[4]], "d")
-  yaml_keys <- attr(result, "yaml_keys", exact = TRUE)
-  expect_null(names(yaml_keys))
-  expect_identical(yaml_keys[[1]], 1L)
-  expect_identical(yaml_keys[[2]], TRUE)
-  expect_identical(yaml_keys[[3]], NULL)
-  expect_identical(yaml_keys[[4]], 3.5)
+  expected <- structure(
+    list("a", "b", "c", "d"),
+    names = c("", "", "", ""),
+    yaml_keys = list(1L, TRUE, NULL, 3.5)
+  )
+
+  expect_identical(result, expected)
 })
 
 test_that("parse_yaml stores non-string mapping keys in yaml_key attribute", {
@@ -150,13 +146,54 @@ string: d
 )--"
   result <- parse_yaml(yaml)
 
-  expect_named(result, c("", "", "", "string"))
-  yaml_keys <- attr(result, "yaml_keys", exact = TRUE)
-  expect_null(names(yaml_keys))
-  expect_identical(yaml_keys[[1]], 1L)
-  expect_identical(yaml_keys[[2]], TRUE)
-  expect_identical(yaml_keys[[3]], 3.5)
-  expect_identical(yaml_keys[[4]], "string")
+  expected <- structure(
+    list("a", "b", "c", "d"),
+    names = c("", "", "", "string"),
+    yaml_keys = list(1L, TRUE, 3.5, "string")
+  )
+
+  expect_identical(result, expected)
+})
+
+test_that("parse_yaml mapping key tags respect simplify flag", {
+  yaml <- "!<tag:yaml.org,2002:str> foo: 1\n"
+
+  expected <- list(foo = 1L)
+
+  expect_identical(parse_yaml(yaml, simplify = TRUE), expected)
+  expect_identical(parse_yaml(yaml, simplify = FALSE), expected)
+
+  expect_snapshot(str(parse_yaml(
+    "!<tag:yaml.org,2002:str> foo: 1\n",
+    simplify = TRUE
+  )))
+  expect_snapshot(str(parse_yaml(
+    "!<tag:yaml.org,2002:str> foo: 1\n",
+    simplify = FALSE
+  )))
+})
+
+test_that("parse_yaml preserves non-core tags on mapping keys via yaml_keys", {
+  yaml <- "!custom foo: 1\n"
+
+  expected <- structure(
+    list(1L),
+    names = "foo",
+    yaml_keys = list(structure("foo", yaml_tag = "!custom"))
+  )
+
+  simplified <- parse_yaml(yaml, simplify = TRUE)
+  expect_identical(simplified, expected)
+
+  unsimplified <- parse_yaml(yaml, simplify = FALSE)
+  expect_identical(unsimplified, expected)
+
+  encoded <- encode_yaml(unsimplified)
+  roundtrip <- parse_yaml(encoded, simplify = FALSE)
+  expect_identical(roundtrip, expected)
+
+  expect_snapshot(str(parse_yaml("!custom foo: 1\n", simplify = TRUE)))
+  expect_snapshot(str(parse_yaml("!custom foo: 1\n", simplify = FALSE)))
 })
 
 test_that("parse_yaml does not set yaml_keys when all mapping keys are strings", {
@@ -177,14 +214,13 @@ test_that("parse_yaml yaml_keys align with positions when names are empty", {
 )--"
   result <- parse_yaml(yaml)
 
-  expect_named(result, c("", ""))
-  expect_identical(result[[1]], "a")
-  expect_identical(result[[2]], "b")
+  expected <- structure(
+    list("a", "b"),
+    names = c("", ""),
+    yaml_keys = list(1L, 2L)
+  )
 
-  yaml_keys <- attr(result, "yaml_keys", exact = TRUE)
-  expect_null(names(yaml_keys))
-  expect_identical(yaml_keys[[1]], 1L)
-  expect_identical(yaml_keys[[2]], 2L)
+  expect_identical(result, expected)
 })
 
 test_that("parse_yaml returns visibly", {

@@ -70,3 +70,41 @@
       Error in `parse_yaml()`:
       ! `text` must not contain NA strings
 
+# parse_yaml mapping key tags respect simplify flag
+
+    Code
+      str(parse_yaml("!<tag:yaml.org,2002:str> foo: 1\n", simplify = TRUE))
+    Output
+      List of 1
+       $ foo: int 1
+
+---
+
+    Code
+      str(parse_yaml("!<tag:yaml.org,2002:str> foo: 1\n", simplify = FALSE))
+    Output
+      List of 1
+       $ foo: int 1
+
+# parse_yaml preserves non-core tags on mapping keys via yaml_keys
+
+    Code
+      str(parse_yaml("!custom foo: 1\n", simplify = TRUE))
+    Output
+      List of 1
+       $ foo: int 1
+       - attr(*, "yaml_keys")=List of 1
+        ..$ : chr "foo"
+        .. ..- attr(*, "yaml_tag")= chr "!custom"
+
+---
+
+    Code
+      str(parse_yaml("!custom foo: 1\n", simplify = FALSE))
+    Output
+      List of 1
+       $ foo: int 1
+       - attr(*, "yaml_keys")=List of 1
+        ..$ : chr "foo"
+        .. ..- attr(*, "yaml_tag")= chr "!custom"
+

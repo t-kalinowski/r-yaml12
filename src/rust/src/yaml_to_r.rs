@@ -6,10 +6,21 @@ use saphyr::{Mapping, Scalar, Tag, Yaml, YamlLoader};
 use saphyr_parser::{Parser, ScalarStyle};
 use std::fs;
 
-fn resolve_representation(node: &mut Yaml) {
+fn resolve_representation(node: &mut Yaml, simplify: bool) {
     if let Yaml::Representation(value, style, tag) = node {
         let parsed = match &tag {
+            // Non-core schema tags always become Tagged nodes wrapping a
+            // string scalar; explicit tags on representation nodes are not
+            // subject to schema-based type resolution.
             Some(tag) if !tag.is_yaml_core_schema() => Yaml::Tagged(
+                tag.clone(),
+                Box::new(Yaml::Value(Scalar::String(value.clone()))),
+            ),
+            // When not simplifying, even core-schema tags for the YAML string
+            // type should be preserved explicitly as Tagged nodes, so that
+            // callers can observe that the tag was written (e.g. `!!str` or
+            // `tag:yaml.org,2002:str`).
+            Some(tag) if !simplify && is_canonical_string_tag(tag) => Yaml::Tagged(
                 tag.clone(),
                 Box::new(Yaml::Value(Scalar::String(value.clone()))),
             ),
@@ -36,7 +47,7 @@ fn yaml_to_robj(node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
         )),
         Yaml::BadValue => Err(api_other("Encountered an invalid YAML scalar value")),
         Yaml::Representation(_, _, _) => {
-            resolve_representation(node);
+            resolve_representation(node, simplify);
             yaml_to_robj(node, simplify)
         }
     }
@@ -73,7 +84,7 @@ fn sequence_to_robj(seq: &mut [Yaml], simplify_seqs: bool) -> Fallible<Robj> {
 
     // iterate over the vec once to see if we can simplify, fail early/fast if not
     for node in seq.iter_mut() {
-        resolve_representation(node);
+        resolve_representation(node, simplify_seqs);
         match node {
             Yaml::Tagged(_, _) => {
                 simplify = false;
@@ -172,28 +183,58 @@ fn mapping_to_robj(map: &mut Mapping, simplify: bool) -> Fallible<Robj> {
     for (key, value) in map.iter_mut() {
         // iter_mut() only returns mut value, not mut key.
         let mut resolved_key = key.clone();
-        resolve_representation(&mut resolved_key);
+        resolve_representation(&mut resolved_key, simplify);
 
         resolved_keys.push(resolved_key);
         values.push(yaml_to_robj(value, simplify)?);
     }
 
-    // 2nd pass: build names as &str from resolved_keys
-    let mut has_non_string_key = false;
+    // 2nd pass: build names as &str from resolved_keys.
+    // String mapping keys should contribute regular R names. `needs_yaml_keys_attr`
+    // tracks whether we must attach the `yaml_keys` attribute because at least
+    // one key cannot be represented purely by R names: either a non-string key,
+    // or a string key carrying a non-canonical (informative) tag. Canonical
+    // core string tags are treated as "no information" for this purpose.
+    let mut needs_yaml_keys_attr = false;
     let mut names: Vec<&str> = Vec::with_capacity(len);
     for resolved_key in &resolved_keys {
-        if let Yaml::Value(Scalar::String(name)) = resolved_key {
-            names.push(name);
-        } else {
-            has_non_string_key = true;
-            names.push("");
+        match resolved_key {
+            Yaml::Value(Scalar::String(name)) => {
+                // Plain string key: representable as an R name with no extra metadata.
+                names.push(name);
+            }
+            Yaml::Tagged(tag, inner) => {
+                match inner.as_ref() {
+                    // Tagged string scalar key: use the string as the R name.
+                    Yaml::Value(Scalar::String(name)) => {
+                        names.push(name);
+                        // Non-canonical tags carry information that must be preserved
+                        // via `yaml_keys`; canonical string tags do not.
+                        if !is_canonical_string_tag(tag) {
+                            needs_yaml_keys_attr = true;
+                        }
+                    }
+                    // Any other tagged key (non-string) cannot be represented by an R
+                    // name alone; force `yaml_keys`.
+                    _ => {
+                        names.push("");
+                        needs_yaml_keys_attr = true;
+                    }
+                }
+            }
+            // Non-string keys always require `yaml_keys`, since they cannot be expressed
+            // purely via R names.
+            _ => {
+                needs_yaml_keys_attr = true;
+                names.push("");
+            }
         }
     }
 
     let mut list = List::from_names_and_values(&names, values.into_iter())
         .map_err(|err| api_other(err.to_string()))?;
 
-    if has_non_string_key {
+    if needs_yaml_keys_attr {
         let mut yaml_keys = Vec::with_capacity(resolved_keys.len());
         for mut key in resolved_keys {
             yaml_keys.push(yaml_to_robj(&mut key, simplify)?);
@@ -207,8 +248,39 @@ fn mapping_to_robj(map: &mut Mapping, simplify: bool) -> Fallible<Robj> {
 }
 
 fn convert_tagged(tag: &Tag, node: &mut Yaml, simplify: bool) -> Fallible<Robj> {
+    if simplify && is_canonical_string_tag(tag) {
+        // When simplifying, tags that only assert the YAML string type are
+        // redundant; treat the node as an ordinary string value with no
+        // `yaml_tag` attribute.
+        return yaml_to_robj(node, simplify);
+    }
+
     let value = yaml_to_robj(node, simplify)?;
-    set_yaml_tag_attr(value, &format!("{tag}"))
+    let tag_str = format!("{tag}");
+    set_yaml_tag_attr(value, &tag_str)
+}
+
+fn is_canonical_string_tag(tag: &Tag) -> bool {
+    // Tags that are equivalent to the core YAML string tag and therefore do
+    // not carry additional semantic information beyond "this is a string".
+    const STRING_TAGS: &[&str] = &[
+        "str",
+        "!str",
+        "!!str",
+        "!!!str",
+        "<str>",
+        "!<str>",
+        "<!str>",
+        "!<!str>",
+        "<!!str>",
+        "!<!!str>",
+        "tag:yaml.org,2002:str",
+        "!tag:yaml.org,2002:str",
+        "<tag:yaml.org,2002:str>",
+        "!<tag:yaml.org,2002:str>",
+    ];
+
+    STRING_TAGS.contains(&format!("{tag}").trim())
 }
 
 fn is_canonical_null_tag(tag: &str) -> bool {
