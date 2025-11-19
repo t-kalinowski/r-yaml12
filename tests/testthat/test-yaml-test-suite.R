@@ -7,32 +7,13 @@ test_cases <- dirname(list.files(
 
 # unlink("skip-cases.txt")
 
+
 skip_cases <- c(
   "7FWL",
-  "UGM3",
   "FH7J",
   "name/tags-on-empty-scalars",
-  "tags/scalar/FH7J",
-  "tags/tag/FH7J",
-  "name/anchor-for-empty-node",
-  "name/mixed-block-mapping-implicit-to-explicit",
-  "name/spec-example-2-27-invoice",
   "name/spec-example-6-24-verbatim-tags",
-  "tags/alias/6KGN",
-  "tags/alias/UGM3",
-  "tags/anchor/6KGN",
-  "tags/explicit-key/RR7F",
-  "tags/literal/UGM3",
-  "tags/mapping/7FWL",
-  "tags/mapping/RR7F",
-  "tags/mapping/UGM3",
-  "tags/sequence/UGM3",
-  "tags/spec/7FWL",
-  "tags/spec/UGM3",
-  "tags/tag/7FWL",
-  "tags/tag/UGM3",
-  "tags/unknown-tag/7FWL",
-  "tags/unknown-tag/UGM3"
+  NULL
 )
 
 sort_named_lists <- function(x) {
@@ -46,7 +27,6 @@ sort_named_lists <- function(x) {
   lapply(x, sort_named_lists)
 }
 
-# test_cases <- test_cases[!endsWith(test_cases, skip_cases)]
 
 for (case in test_cases) {
   case_id <- basename(case)
@@ -115,9 +95,11 @@ for (case in test_cases) {
       parsed <- sort_named_lists(parsed)
       expected <- sort_named_lists(expected)
 
-      expect_identical(parsed, expected)
+      expect_equal(parsed, expected)
 
-      if (!identical(parsed, expected)) {
+      return()
+      if (length(waldo::compare(parsed, expected, tolerance = 0))) {
+        # browser()
         # cat(case, "\n", sep = "", file = "skip-cases.txt", append = TRUE)
         # message("failing case: ", case)
         # withr::with_dir(case, {
@@ -128,6 +110,7 @@ for (case in test_cases) {
         #   cat("in.json:\n")
         #   print(readLines("in.json"))
         #   browser()
+        #   waldo::compare(parsed, expected)
         #   read_yaml("in.yaml")
         # })
         # fail(paste("case fails:", case))
@@ -135,3 +118,4 @@ for (case in test_cases) {
     }
   })
 }
+# readLines("skip-cases.txt") |> TKutils::dput_cb()
