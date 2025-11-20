@@ -3,3 +3,4 @@ src/rust/vendor
 src/Makevars
 src/Makevars.win
 src/vendor
+stash
