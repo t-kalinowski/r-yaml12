@@ -121,6 +121,35 @@ test_that("parse_yaml applies handlers to tagged nodes", {
   )
 })
 
+test_that("parse_yaml applies handlers to tagged mapping keys", {
+  handlers <- list(
+    "!upper" = function(x) toupper(x)
+  )
+
+  result <- parse_yaml("!upper key: value", handlers = handlers)
+  expect_identical(result, list(KEY = "value"))
+})
+
+test_that("parse_yaml keeps original name when key handler returns non-string", {
+  handlers <- list(
+    "!meta" = function(x) list(label = toupper(x))
+  )
+
+  result <- parse_yaml("!meta key: value", handlers = handlers)
+  expect_identical(names(result), "key")
+  expect_true(!is.null(attr(result, "yaml_keys")))
+  expect_identical(attr(result, "yaml_keys")[[1]], list(label = "KEY"))
+})
+
+test_that("parse_yaml applies handlers inside sequences before returning", {
+  handlers <- list(
+    "!double" = function(x) as.integer(x) * 2L
+  )
+
+  result <- parse_yaml("items: [!double 2, 3, !double 5]", handlers = handlers)
+  expect_identical(result, list(items = list(4L, 3L, 10L)))
+})
+
 test_that("parse_yaml handler errors propagate", {
   expect_error(
     parse_yaml(

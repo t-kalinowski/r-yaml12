@@ -2,7 +2,6 @@ use crate::unwind::{run_with_unwind_protect, EvalError};
 use crate::warning::emit_warning;
 use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
 use extendr_api::prelude::*;
-use extendr_ffi::Rf_lcons;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlLoader};
 use saphyr_parser::{Parser, ScalarStyle};
 use std::{borrow::Cow, collections::HashMap, fs, mem};
@@ -10,14 +9,15 @@ use std::{borrow::Cow, collections::HashMap, fs, mem};
 #[allow(improper_ctypes)]
 extern "C" {
     fn Rf_eval(expr: extendr_ffi::SEXP, env: extendr_ffi::SEXP) -> extendr_ffi::SEXP;
+    fn Rf_lang2(x1: extendr_ffi::SEXP, x2: extendr_ffi::SEXP) -> extendr_ffi::SEXP;
 }
 
-struct HandlerRegistry {
-    handlers: HashMap<String, Function>,
+struct HandlerRegistry<'a> {
+    handlers: HashMap<&'a str, Function>,
 }
 
-impl HandlerRegistry {
-    fn from_robj(handlers: &Robj) -> Fallible<Option<Self>> {
+impl<'a> HandlerRegistry<'a> {
+    fn from_robj(handlers: &'a Robj) -> Fallible<Option<Self>> {
         if handlers.is_null() {
             return Ok(None);
         }
@@ -34,7 +34,7 @@ impl HandlerRegistry {
             return Err(api_other("`handlers` must be a named list of functions"));
         };
 
-        let names: Vec<&str> = names_attr.collect();
+        let names: Vec<&'a str> = names_attr.collect();
 
         let mut handlers_map = HashMap::with_capacity(list.len());
         for (name, value) in names.into_iter().zip(list.values()) {
@@ -48,7 +48,7 @@ impl HandlerRegistry {
                 ))
             })?;
 
-            handlers_map.insert(name.to_string(), func);
+            handlers_map.insert(name, func);
         }
 
         Ok(Some(Self {
@@ -76,8 +76,8 @@ impl HandlerRegistry {
 
         let protect_result = run_with_unwind_protect(|| unsafe {
             let st = &mut *state_ptr;
-            let args = pairlist!(st.arg.clone());
-            let call = Robj::from_sexp(Rf_lcons(st.handler.get(), args.get()));
+            // Build a call of the form handler(arg) as a language object.
+            let call = Robj::from_sexp(Rf_lang2(st.handler.get(), st.arg.get()));
             let env = st.handler.environment().unwrap_or_else(global_env);
             let out = Rf_eval(call.get(), env.get());
             st.result = Some(Robj::from_sexp(out));
@@ -285,11 +285,36 @@ fn mapping_to_robj(
 
     let mut values: Vec<Robj> = Vec::with_capacity(len);
     let mut resolved_keys: Vec<Yaml> = Vec::with_capacity(len);
+    let mut handled_key_results: Vec<Option<Robj>> = Vec::with_capacity(len);
 
     // 1st pass: resolve keys/values while consuming the mapping to avoid cloning keys.
     for (mut key, mut value) in mem::take(map) {
         resolve_representation(&mut key, simplify);
-        resolved_keys.push(key);
+
+        // If the key is tagged and a handler exists, apply it to the key itself.
+        // The handler must return a string; we use that as the final list name.
+        let (handled_key, handled_key_value) = match (handlers, &key) {
+            (Some(registry), Yaml::Tagged(tag, _)) => {
+                if let Some(handler) = registry.get(&render_tag(tag)) {
+                    let key_obj = yaml_to_robj(&mut key, simplify, handlers)?;
+                    let handled = registry.apply(handler, key_obj)?;
+                    if let Some(key_str) = handled.as_str() {
+                        let yaml_key = Yaml::Value(Scalar::String(key_str.into()));
+                        (yaml_key, None)
+                    } else {
+                        // Non-string: keep the original key for naming, but preserve the
+                        // handled value in `yaml_keys`.
+                        (key, Some(handled))
+                    }
+                } else {
+                    (key, None)
+                }
+            }
+            _ => (key, None),
+        };
+
+        resolved_keys.push(handled_key);
+        handled_key_results.push(handled_key_value);
         values.push(yaml_to_robj(&mut value, simplify, handlers)?);
     }
 
@@ -301,7 +326,10 @@ fn mapping_to_robj(
     // core string tags are treated as "no information" for this purpose.
     let mut needs_yaml_keys_attr = false;
     let mut names: Vec<&str> = Vec::with_capacity(len);
-    for resolved_key in &resolved_keys {
+    for (resolved_key, handled_key_value) in resolved_keys.iter().zip(handled_key_results.iter()) {
+        if handled_key_value.is_some() {
+            needs_yaml_keys_attr = true;
+        }
         match resolved_key {
             Yaml::Value(Scalar::String(name)) => {
                 // Plain string key: representable as an R name with no extra metadata.
@@ -343,8 +371,12 @@ fn mapping_to_robj(
 
     if needs_yaml_keys_attr {
         let mut yaml_keys = Vec::with_capacity(resolved_keys.len());
-        for mut key in resolved_keys {
-            yaml_keys.push(yaml_to_robj(&mut key, simplify, handlers)?);
+        for (mut key, handled_value) in resolved_keys.into_iter().zip(handled_key_results) {
+            if let Some(val) = handled_value {
+                yaml_keys.push(val);
+            } else {
+                yaml_keys.push(yaml_to_robj(&mut key, simplify, handlers)?);
+            }
         }
         let yaml_keys = List::from_values(yaml_keys);
         list.set_attrib(sym_yaml_keys(), yaml_keys)

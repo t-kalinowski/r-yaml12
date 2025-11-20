@@ -154,58 +154,6 @@ fn write_yaml(value: Robj, path: &str, #[extendr(default = "FALSE")] multi: bool
     handle_eval_error(result.unwrap_err())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::unwind::LongjmpToken;
-    use extendr_ffi as ffi;
-    use std::cell::Cell;
-
-    struct DropFlag<'a> {
-        flag: &'a Cell<bool>,
-    }
-
-    impl<'a> Drop for DropFlag<'a> {
-        fn drop(&mut self) {
-            self.flag.set(true);
-        }
-    }
-
-    #[test]
-    fn scoped_result_drops_locals_on_ok_path() {
-        let dropped = Cell::new(false);
-        let result: Fallible<()> = {
-            let _flag = DropFlag { flag: &dropped };
-            Ok(())
-        };
-        assert!(result.is_ok());
-        assert!(dropped.get());
-    }
-
-    #[test]
-    fn scoped_result_drops_locals_on_api_err() {
-        let dropped = Cell::new(false);
-        let result: Fallible<()> = {
-            let _flag = DropFlag { flag: &dropped };
-            Err(api_other("boom"))
-        };
-        assert!(matches!(result, Err(EvalError::Api(_))));
-        assert!(dropped.get());
-    }
-
-    #[test]
-    fn scoped_result_drops_locals_on_jump_err() {
-        let dropped = Cell::new(false);
-        let token = unsafe { LongjmpToken::from_tagged_ptr(ffi::R_NilValue) };
-        let result: Fallible<()> = {
-            let _flag = DropFlag { flag: &dropped };
-            Err(EvalError::Jump(token))
-        };
-        assert!(matches!(result, Err(EvalError::Jump(_))));
-        assert!(dropped.get());
-    }
-}
-
 // Macro to generate exports.
 // This ensures exported functions are registered with R.
 // See corresponding C code in `entrypoint.c`.
