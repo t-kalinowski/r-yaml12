@@ -120,6 +120,10 @@ fn sequence_to_robj(
                 if this_kind == out_type || matches!(scalar_type, Scalar::Null) {
                     continue;
                 }
+                if this_kind == RVectorType::Double && out_type == RVectorType::Integer {
+                    out_type = RVectorType::Double;
+                    continue;
+                }
                 if let Scalar::Integer(i) = scalar_type {
                     if out_type == RVectorType::Double {
                         continue;

@@ -90,6 +90,17 @@ test_that("parse_yaml errors on NA strings regardless of position or length", {
   )
 })
 
+test_that("parse_yaml simplifies mixed numeric sequences", {
+  yaml <- "[1, 2.5, 0x10, .inf, null]"
+
+  simplified <- parse_yaml(yaml, simplify = TRUE)
+  expect_type(simplified, "double")
+  expect_identical(simplified, c(1, 2.5, 16, Inf, NA_real_))
+
+  unsimplified <- parse_yaml(yaml, simplify = FALSE)
+  expect_identical(unsimplified, list(1L, 2.5, 16L, Inf, NULL))
+})
+
 test_that("parse_yaml handles trailing newlines", {
   expect_identical(parse_yaml("foo: 1\n"), list(foo = 1L))
 })
