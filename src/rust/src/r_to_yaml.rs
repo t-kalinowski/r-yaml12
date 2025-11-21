@@ -1,4 +1,4 @@
-use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible, R_STRING_MAX_BYTES};
+use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter};
 use std::{borrow::Cow, fs, os::raw::c_char};
@@ -286,12 +286,6 @@ pub(crate) fn write_yaml_impl(value: &Robj, path: Option<&str>, multi: bool) -> 
     } else {
         4
     };
-    let body_len = yaml.len().saturating_sub(body_start);
-    if body_len > R_STRING_MAX_BYTES {
-        return Err(api_other(
-            "Formatted YAML exceeds R's 2^31-1 byte string limit",
-        ));
-    }
     let body = &yaml[body_start..];
     if let Some(path) = path {
         fs::write(path, body)
