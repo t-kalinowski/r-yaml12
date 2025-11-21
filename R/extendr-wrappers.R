@@ -45,7 +45,7 @@ read_yaml <- function(path, multi = FALSE, simplify = TRUE, handlers = NULL) .Ca
 #' @param path Scalar string file path to write YAML to. When `NULL` (the default),
 #'   write to R's standard output connection.
 #' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
-#' @return Invisibly returns `NULL`.
+#' @return Invisibly returns `value`.
 #' @export
 write_yaml <- function(value, path = NULL, multi = FALSE) invisible(.Call(wrap__write_yaml, value, path, multi))
 

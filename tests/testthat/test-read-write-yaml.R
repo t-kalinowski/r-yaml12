@@ -5,7 +5,7 @@ test_that("write_yaml writes and read_yaml reads single documents", {
   value <- list(alpha = 1L, nested = c(TRUE, NA))
   out <- write_yaml(value, path)
 
-  expect_null(out)
+  expect_identical(out, value)
   expect_true(file.exists(path))
   expect_identical(read_yaml(path), value)
   expect_identical(read_yaml(path, simplify = TRUE), value)
@@ -18,7 +18,8 @@ test_that("write_yaml writes and read_yaml reads single documents", {
 test_that("write_yaml defaults to R stdout when path is NULL", {
   value <- list(alpha = 1L, nested = c(TRUE, NA))
 
-  output <- capture.output(write_yaml(value))
+  output <- capture.output(out <- write_yaml(value))
+  expect_identical(out, value)
   expect_identical(
     paste(output, collapse = "\n"),
     format_yaml(value)

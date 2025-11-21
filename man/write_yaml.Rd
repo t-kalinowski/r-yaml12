@@ -15,7 +15,7 @@ write to R's standard output connection.}
 \item{multi}{When \code{TRUE}, treat \code{value} as a list of YAML documents and encode a stream.}
 }
 \value{
-Invisibly returns \code{NULL}.
+Invisibly returns \code{value}.
 }
 \description{
 Write an R object as YAML 1.2 to a file.

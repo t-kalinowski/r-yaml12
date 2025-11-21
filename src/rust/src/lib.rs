@@ -151,7 +151,7 @@ fn read_yaml(
 /// @param path Scalar string file path to write YAML to. When `NULL` (the default),
 ///   write to R's standard output connection.
 /// @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
-/// @return Invisibly returns `NULL`.
+/// @return Invisibly returns `value`.
 /// @export
 #[extendr(invisible)]
 fn write_yaml(
@@ -159,22 +159,28 @@ fn write_yaml(
     #[extendr(default = "NULL")] path: Robj,
     #[extendr(default = "FALSE")] multi: bool,
 ) -> Robj {
-    let path = if path.is_null() {
-        Ok(None)
+    let path_opt = if path.is_null() {
+        None
     } else {
-        path.as_str()
-            .ok_or_else(|| {
-                api_other("`path` must be NULL or a single, non-missing string".to_string())
-            })
-            .map(Some)
+        match path.as_str() {
+            Some(path) => Some(path),
+            None => {
+                drop(value);
+                return handle_eval_error(api_other(
+                    "`path` must be NULL or a single, non-missing string",
+                ));
+            }
+        }
     };
-    let result = path.and_then(|path| r_to_yaml::write_yaml_impl(&value, path, multi));
-    if result.is_ok() {
-        return NULL.into();
+    let result: Fallible<()> = { r_to_yaml::write_yaml_impl(&value, path_opt, multi) };
+    match result {
+        Ok(()) => value,
+        Err(err) => {
+            // Drop before delegating to R to avoid skipped drops on jumps.
+            drop(value);
+            handle_eval_error(err)
+        }
     }
-    // Safe: entrypoint holds no owned locals; work lives in write_yaml_impl.
-    // If adding locals here, wrap work in a block so drops happen before this call.
-    handle_eval_error(result.unwrap_err())
 }
 
 // Macro to generate exports.
