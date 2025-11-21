@@ -5,13 +5,14 @@ mod warning;
 mod yaml_to_r;
 
 use crate::r_to_yaml::yaml_body;
-use crate::r_to_yaml::R_STRING_MAX_BYTES;
 use extendr_api::prelude::*;
 use std::result::Result as StdResult;
 use std::{cell::OnceCell, thread_local};
 use unwind::EvalError;
 
 type Fallible<T> = StdResult<T, EvalError>;
+
+pub(crate) const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 
 fn api_other(msg: impl Into<String>) -> EvalError {
     EvalError::Api(Error::Other(msg.into()))

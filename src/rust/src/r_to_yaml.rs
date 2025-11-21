@@ -1,9 +1,7 @@
-use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
+use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible, R_STRING_MAX_BYTES};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter};
 use std::{borrow::Cow, fs};
-
-pub(crate) const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 
 pub(crate) fn yaml_body(yaml: &str, multi: bool) -> &str {
     if multi || !yaml.starts_with("---\n") {
