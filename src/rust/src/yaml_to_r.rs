@@ -1,123 +1,11 @@
-use crate::unwind::{run_with_unwind_protect, EvalError};
+use crate::handlers::HandlerRegistry;
+use crate::unwind::EvalError;
 use crate::warning::emit_warning;
 use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlLoader};
 use saphyr_parser::{Parser, ScalarStyle};
-use std::{borrow::Cow, collections::HashMap, fs, mem};
-
-#[allow(improper_ctypes)]
-extern "C" {
-    fn Rf_eval(expr: extendr_ffi::SEXP, env: extendr_ffi::SEXP) -> extendr_ffi::SEXP;
-    fn Rf_lang2(x1: extendr_ffi::SEXP, x2: extendr_ffi::SEXP) -> extendr_ffi::SEXP;
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-struct TagKeyRef<'a> {
-    handle: &'a str,
-    suffix: &'a str,
-}
-
-impl<'a> TagKeyRef<'a> {
-    fn eq_str(&self, other: &str) -> bool {
-        if other.len() != self.handle.len() + self.suffix.len() {
-            return false;
-        }
-        let (handle_prefix, suffix_part) = other.split_at(self.handle.len());
-        handle_prefix == self.handle && suffix_part == self.suffix
-    }
-}
-
-impl<'a> From<&'a Tag> for TagKeyRef<'a> {
-    fn from(tag: &'a Tag) -> Self {
-        Self {
-            handle: tag.handle.as_str(),
-            suffix: tag.suffix.as_str(),
-        }
-    }
-}
-
-struct HandlerRegistry {
-    handlers: HashMap<String, Function>,
-}
-
-impl HandlerRegistry {
-    fn from_robj(handlers: &Robj) -> Fallible<Option<Self>> {
-        if handlers.is_null() {
-            return Ok(None);
-        }
-
-        let list: List = handlers
-            .try_into()
-            .map_err(|_| api_other("`handlers` must be a named list of functions"))?;
-
-        if list.is_empty() {
-            return Ok(None);
-        }
-
-        let Some(names_attr) = list.names() else {
-            return Err(api_other("`handlers` must be a named list of functions"));
-        };
-
-        let mut handlers_map = HashMap::with_capacity(list.len());
-        let names: Vec<_> = names_attr.collect();
-        for (name, value) in names.into_iter().zip(list.values()) {
-            if name.is_na() || name.is_empty() {
-                return Err(api_other("`handlers` must be a named list of functions"));
-            }
-
-            let func = value.as_function().ok_or_else(|| {
-                api_other(format!(
-                    "Handler `{name}` must be a function (closure or primitive)"
-                ))
-            })?;
-
-            handlers_map.insert(name.to_string(), func);
-        }
-
-        Ok(Some(Self {
-            handlers: handlers_map,
-        }))
-    }
-
-    fn get(&self, tag: TagKeyRef<'_>) -> Option<&Function> {
-        self.handlers
-            .iter()
-            .find(|(name, _)| tag.eq_str(name.as_str()))
-            .map(|(_, handler)| handler)
-    }
-
-    fn apply(&self, handler: &Function, arg: Robj) -> Fallible<Robj> {
-        struct CallState<'a> {
-            handler: &'a Function,
-            arg: Robj,
-            result: Option<Robj>,
-        }
-
-        let mut state = CallState {
-            handler,
-            arg,
-            result: None,
-        };
-        let state_ptr = &mut state as *mut CallState;
-
-        let protect_result = run_with_unwind_protect(|| unsafe {
-            let st = &mut *state_ptr;
-            // Build a call of the form handler(arg) as a language object.
-            let call = Robj::from_sexp(Rf_lang2(st.handler.get(), st.arg.get()));
-            let env = st.handler.environment().unwrap_or_else(global_env);
-            let out = Rf_eval(call.get(), env.get());
-            st.result = Some(Robj::from_sexp(out));
-        });
-
-        match protect_result {
-            Ok(()) => state
-                .result
-                .ok_or_else(|| api_other("Handler evaluation failed unexpectedly")),
-            Err(token) => Err(EvalError::Jump(token)),
-        }
-    }
-}
+use std::{borrow::Cow, fs, mem};
 
 fn resolve_representation(node: &mut Yaml, _simplify: bool) {
     let (value, style, tag) = match mem::replace(node, Yaml::BadValue) {
@@ -161,7 +49,7 @@ fn resolve_representation(node: &mut Yaml, _simplify: bool) {
 fn yaml_to_robj(
     node: &mut Yaml,
     simplify: bool,
-    handlers: Option<&HandlerRegistry>,
+    handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     match node {
         Yaml::Value(scalar) => Ok(scalar_to_robj(scalar)),
@@ -198,7 +86,7 @@ fn scalar_to_robj(scalar: &Scalar) -> Robj {
 fn sequence_to_robj(
     seq: &mut [Yaml],
     simplify_seqs: bool,
-    handlers: Option<&HandlerRegistry>,
+    handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     #[derive(Copy, Clone, PartialEq, Eq)]
     enum RVectorType {
@@ -306,7 +194,7 @@ fn sequence_to_robj(
 fn mapping_to_robj(
     map: &mut Mapping,
     simplify: bool,
-    handlers: Option<&HandlerRegistry>,
+    handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     let len = map.len();
 
@@ -322,7 +210,7 @@ fn mapping_to_robj(
         // Keep the handled value alive so we can borrow its string data when
         // constructing R names without allocating.
         let key_handler_result = if let (Some(registry), Yaml::Tagged(tag, _)) = (handlers, &key) {
-            if let Some(handler) = registry.get(TagKeyRef::from(tag.as_ref())) {
+            if let Some(handler) = registry.get_for_tag(tag.as_ref()) {
                 let key_obj = yaml_to_robj(&mut key, simplify, handlers)?;
                 Some(registry.apply(handler, key_obj)?)
             } else {
@@ -409,10 +297,10 @@ fn convert_tagged(
     tag: &Tag,
     node: &mut Yaml,
     simplify: bool,
-    handlers: Option<&HandlerRegistry>,
+    handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     if let Some(registry) = handlers {
-        if let Some(handler) = registry.get(TagKeyRef::from(tag)) {
+        if let Some(handler) = registry.get_for_tag(tag) {
             let value = yaml_to_robj(node, simplify, handlers)?;
             return registry.apply(handler, value);
         }
@@ -574,7 +462,7 @@ fn docs_to_robj(
     mut docs: Vec<Yaml<'_>>,
     multi: bool,
     simplify: bool,
-    handlers: Option<&HandlerRegistry>,
+    handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     if multi {
         let mut values = Vec::with_capacity(docs.len());
