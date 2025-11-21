@@ -24,10 +24,24 @@ parse_yaml <- function(text, multi = FALSE, simplify = TRUE, handlers = NULL) .C
 
 #' Format an R object as YAML 1.2.
 #'
+#' When `multi = TRUE`, emits document start markers (`---`) and ends the
+#' stream with a trailing newline. When `multi = FALSE`, writes a single
+#' document node without a start marker and no final newline. Honors a
+#' `yaml_tag` attribute on values (see examples).
+#'
 #' @param value Any R object composed of lists, atomic vectors, and scalars.
 #' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 #' @return A scalar character string containing YAML.
 #' @export
+#' @examples
+#' cat(format_yaml(list(foo = 1, bar = list(TRUE, NA))))
+#' 
+#' docs <- list("first", "second")
+#' cat(format_yaml(docs, multi = TRUE))
+#'
+#' tagged <- structure("1 + x", yaml_tag = "!expr")
+#' cat(tagged_yaml <- format_yaml(tagged), "\n")
+#' attr(parse_yaml(tagged_yaml), "yaml_tag")
 format_yaml <- function(value, multi = FALSE) .Call(wrap__format_yaml, value, multi)
 
 #' Read YAML 1.2 document(s) from a file path.
@@ -41,12 +55,23 @@ read_yaml <- function(path, multi = FALSE, simplify = TRUE, handlers = NULL) .Ca
 
 #' Write an R object as YAML 1.2 to a file.
 #'
+#' Writes the YAML stream to a file or stdout and always emits explicit document
+#' start (`---`) markers and a final end (`...`) marker. Respects `yaml_tag`
+#' attributes when encoding values.
+#'
 #' @param value Any R object composed of lists, atomic vectors, and scalars.
 #' @param path Scalar string file path to write YAML to. When `NULL` (the default),
 #'   write to R's standard output connection.
 #' @param multi When `TRUE`, treat `value` as a list of YAML documents and encode a stream.
 #' @return Invisibly returns `value`.
 #' @export
+#' @examples
+#' write_yaml(list(foo = 1, bar = list(2, "baz")))
+#'
+#' write_yaml(list("foo", "bar"), multi = TRUE)
+#'
+#' tagged <- structure("1 + x", yaml_tag = "!expr")
+#' write_yaml(tagged)
 write_yaml <- function(value, path = NULL, multi = FALSE) invisible(.Call(wrap__write_yaml, value, path, multi))
 
 

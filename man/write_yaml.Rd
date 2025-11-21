@@ -18,5 +18,15 @@ write to R's standard output connection.}
 Invisibly returns \code{value}.
 }
 \description{
-Write an R object as YAML 1.2 to a file.
+Writes the YAML stream to a file or stdout and always emits explicit document
+start (\verb{---}) markers and a final end (\code{...}) marker. Respects \code{yaml_tag}
+attributes when encoding values.
+}
+\examples{
+write_yaml(list(foo = 1, bar = list(2, "baz")))
+
+write_yaml(list("foo", "bar"), multi = TRUE)
+
+tagged <- structure("1 + x", yaml_tag = "!expr")
+write_yaml(tagged)
 }

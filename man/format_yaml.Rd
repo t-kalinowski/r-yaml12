@@ -15,5 +15,18 @@ format_yaml(value, multi = FALSE)
 A scalar character string containing YAML.
 }
 \description{
-Format an R object as YAML 1.2.
+When \code{multi = TRUE}, emits document start markers (\verb{---}) and ends the
+stream with a trailing newline. When \code{multi = FALSE}, writes a single
+document node without a start marker and no final newline. Honors a
+\code{yaml_tag} attribute on values (see examples).
+}
+\examples{
+cat(format_yaml(list(foo = 1, bar = list(TRUE, NA))))
+
+docs <- list("first", "second")
+cat(format_yaml(docs, multi = TRUE))
+
+tagged <- structure("1 + x", yaml_tag = "!expr")
+cat(tagged_yaml <- format_yaml(tagged), "\n")
+attr(parse_yaml(tagged_yaml), "yaml_tag")
 }
