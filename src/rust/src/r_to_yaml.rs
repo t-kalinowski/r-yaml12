@@ -1,29 +1,40 @@
-use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible, R_STRING_MAX_BYTES};
+use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible};
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlEmitter};
 use std::{borrow::Cow, fs};
+
+pub(crate) const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
+
+pub(crate) fn yaml_body(yaml: &str, multi: bool) -> &str {
+    if multi || !yaml.starts_with("---\n") {
+        yaml
+    } else {
+        &yaml[4..]
+    }
+}
 
 fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Fallible<String> {
     if docs.is_empty() {
         return Ok(String::new());
     }
     let mut output = String::new();
-    let mut emitter = YamlEmitter::new(&mut output);
-    emitter.multiline_strings(true);
     if multi {
-        emitter
-            .dump_docs(docs)
-            .map_err(|err| api_other(err.to_string()))?;
+        for doc in docs {
+            {
+                let mut emitter = YamlEmitter::new(&mut output);
+                emitter.multiline_strings(true);
+                emitter
+                    .dump(doc)
+                    .map_err(|err| api_other(err.to_string()))?;
+            }
+            output.push('\n');
+        }
     } else {
+        let mut emitter = YamlEmitter::new(&mut output);
+        emitter.multiline_strings(true);
         emitter
-            .dump_with_document_start(&docs[0], false)
+            .dump(&docs[0])
             .map_err(|err| api_other(err.to_string()))?;
-    }
-    // R strings are limited to 2^31 - 1 bytes; error clearly if we would overflow.
-    if output.len() > R_STRING_MAX_BYTES {
-        return Err(api_other(
-            "Formatted YAML exceeds R's 2^31-1 byte string limit",
-        ));
     }
     Ok(output)
 }
@@ -260,6 +271,12 @@ pub(crate) fn format_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
 
 pub(crate) fn write_yaml_impl(value: &Robj, path: &str, multi: bool) -> Fallible<()> {
     let yaml = format_yaml_impl(value, multi)?;
-    fs::write(path, yaml).map_err(|err| api_other(format!("Failed to write `{path}`: {err}")))?;
+    let body = yaml_body(&yaml, multi);
+    if body.len() > R_STRING_MAX_BYTES {
+        return Err(api_other(
+            "Formatted YAML exceeds R's 2^31-1 byte string limit",
+        ));
+    }
+    fs::write(path, body).map_err(|err| api_other(format!("Failed to write `{path}`: {err}")))?;
     Ok(())
 }

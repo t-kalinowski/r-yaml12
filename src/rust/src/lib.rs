@@ -4,12 +4,13 @@ mod unwind;
 mod warning;
 mod yaml_to_r;
 
+use crate::r_to_yaml::yaml_body;
+use crate::r_to_yaml::R_STRING_MAX_BYTES;
 use extendr_api::prelude::*;
 use std::result::Result as StdResult;
 use std::{cell::OnceCell, thread_local};
 use unwind::EvalError;
 
-const R_STRING_MAX_BYTES: usize = i32::MAX as usize;
 type Fallible<T> = StdResult<T, EvalError>;
 
 fn api_other(msg: impl Into<String>) -> EvalError {
@@ -78,10 +79,16 @@ cached_sym!(YAML_TAG_SYM, yaml_tag, sym_yaml_tag);
 /// @return A scalar character string containing YAML.
 /// @export
 #[extendr]
-fn format_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> String {
+fn format_yaml(value: Robj, #[extendr(default = "FALSE")] multi: bool) -> Robj {
     let result = { r_to_yaml::format_yaml_impl(&value, multi) };
-    if let Ok(value) = result {
-        return value;
+    if let Ok(yaml) = result {
+        let body = yaml_body(&yaml, multi);
+        if body.len() > R_STRING_MAX_BYTES {
+            return handle_eval_error(api_other(
+                "Formatted YAML exceeds R's 2^31-1 byte string limit",
+            ));
+        }
+        return Robj::from(body);
     }
     // Safe: entrypoint holds no owned locals; work lives in format_yaml_impl.
     // If adding locals here, wrap work in a block so drops happen before this call.
