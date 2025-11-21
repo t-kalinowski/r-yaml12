@@ -284,41 +284,33 @@ fn mapping_to_robj(
     let len = map.len();
 
     let mut values: Vec<Robj> = Vec::with_capacity(len);
-    let mut resolved_keys: Vec<Yaml> = Vec::with_capacity(len);
-    let mut handled_key_results: Vec<Option<Robj>> = Vec::with_capacity(len);
+    let mut keys_for_names: Vec<Yaml> = Vec::with_capacity(len);
+    let mut key_handler_results: Vec<Option<Robj>> = Vec::with_capacity(len);
 
     // 1st pass: resolve keys/values while consuming the mapping to avoid cloning keys.
     for (mut key, mut value) in mem::take(map) {
         resolve_representation(&mut key, simplify);
 
         // If the key is tagged and a handler exists, apply it to the key itself.
-        // The handler must return a string; we use that as the final list name.
-        let (handled_key, handled_key_value) = match (handlers, &key) {
-            (Some(registry), Yaml::Tagged(tag, _)) => {
-                if let Some(handler) = registry.get(&render_tag(tag)) {
-                    let key_obj = yaml_to_robj(&mut key, simplify, handlers)?;
-                    let handled = registry.apply(handler, key_obj)?;
-                    if let Some(key_str) = handled.as_str() {
-                        let yaml_key = Yaml::Value(Scalar::String(key_str.into()));
-                        (yaml_key, None)
-                    } else {
-                        // Non-string: keep the original key for naming, but preserve the
-                        // handled value in `yaml_keys`.
-                        (key, Some(handled))
-                    }
-                } else {
-                    (key, None)
-                }
+        // Keep the handled value alive so we can borrow its string data when
+        // constructing R names without allocating.
+        let key_handler_result = if let (Some(registry), Yaml::Tagged(tag, _)) = (handlers, &key) {
+            if let Some(handler) = registry.get(&render_tag(tag)) {
+                let key_obj = yaml_to_robj(&mut key, simplify, handlers)?;
+                Some(registry.apply(handler, key_obj)?)
+            } else {
+                None
             }
-            _ => (key, None),
+        } else {
+            None
         };
 
-        resolved_keys.push(handled_key);
-        handled_key_results.push(handled_key_value);
+        keys_for_names.push(key);
+        key_handler_results.push(key_handler_result);
         values.push(yaml_to_robj(&mut value, simplify, handlers)?);
     }
 
-    // 2nd pass: build names as &str from resolved_keys.
+    // 2nd pass: build names as &str from keys_for_names.
     // String mapping keys should contribute regular R names. `needs_yaml_keys_attr`
     // tracks whether we must attach the `yaml_keys` attribute because at least
     // one key cannot be represented purely by R names: either a non-string key,
@@ -326,39 +318,39 @@ fn mapping_to_robj(
     // core string tags are treated as "no information" for this purpose.
     let mut needs_yaml_keys_attr = false;
     let mut names: Vec<&str> = Vec::with_capacity(len);
-    for (resolved_key, handled_key_value) in resolved_keys.iter().zip(handled_key_results.iter()) {
-        if handled_key_value.is_some() {
-            needs_yaml_keys_attr = true;
+    for (key_for_name, key_handler_result) in keys_for_names.iter().zip(key_handler_results.iter())
+    {
+        if let Some(handled) = key_handler_result {
+            if let Some(name) = handled.as_str() {
+                // Handler returned a string: use it for the R name.
+                names.push(name);
+                continue;
+            } else {
+                // Handler returned a non-string; we'll still need yaml_keys.
+                needs_yaml_keys_attr = true;
+            }
         }
-        match resolved_key {
+
+        match key_for_name {
             Yaml::Value(Scalar::String(name)) => {
                 // Plain string key: representable as an R name with no extra metadata.
                 names.push(name);
             }
-            Yaml::Tagged(tag, inner) => {
-                match inner.as_ref() {
-                    // Tagged string scalar key: use the string as the R name.
-                    Yaml::Value(Scalar::String(name)) => {
-                        names.push(name);
-                        // Non-canonical tags carry information that must be preserved
-                        // via `yaml_keys`; canonical string tags do not.
-                        if !matches!(
-                            classify_tag(tag),
-                            TagClass::Canonical(CanonicalTagKind::CoreString)
-                        ) {
-                            needs_yaml_keys_attr = true;
-                        }
-                    }
-                    // Any other tagged key (non-string) cannot be represented by an R
-                    // name alone; force `yaml_keys`.
-                    _ => {
-                        names.push("");
+            Yaml::Tagged(tag, inner) => match inner.as_ref() {
+                Yaml::Value(Scalar::String(name)) => {
+                    names.push(name);
+                    if !matches!(
+                        classify_tag(tag),
+                        TagClass::Canonical(CanonicalTagKind::CoreString)
+                    ) {
                         needs_yaml_keys_attr = true;
                     }
                 }
-            }
-            // Non-string keys always require `yaml_keys`, since they cannot be expressed
-            // purely via R names.
+                _ => {
+                    needs_yaml_keys_attr = true;
+                    names.push("");
+                }
+            },
             _ => {
                 needs_yaml_keys_attr = true;
                 names.push("");
@@ -370,8 +362,8 @@ fn mapping_to_robj(
         .map_err(|err| api_other(err.to_string()))?;
 
     if needs_yaml_keys_attr {
-        let mut yaml_keys = Vec::with_capacity(resolved_keys.len());
-        for (mut key, handled_value) in resolved_keys.into_iter().zip(handled_key_results) {
+        let mut yaml_keys = Vec::with_capacity(keys_for_names.len());
+        for (mut key, handled_value) in keys_for_names.into_iter().zip(key_handler_results) {
             if let Some(val) = handled_value {
                 yaml_keys.push(val);
             } else {

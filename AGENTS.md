@@ -2,6 +2,7 @@
 
 - Don’t hand-edit generated artifacts: `man/`, `NAMESPACE`, or `R/extendr-wrappers.R`.
 - Unless explicitly asked, never touch the Makevars files. Never change how we vendor and resolve Rust crates.
+- Read-only git commands (status/diff/log) are always fine; never stage, unstage, commit, or otherwise change git state unless explicitly asked.
 - When roxygen or Rust doc comments change, regenerate docs/wrappers from the package root with:
   `rextendr::document(); devtools::document()`.
 - Before wrapping up, run formatters: `cargo fmt` and `air format .`.
