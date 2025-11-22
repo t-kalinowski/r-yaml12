@@ -326,7 +326,7 @@ fn render_tag(tag: &Tag) -> String {
     rendered
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum CanonicalTagKind {
     CoreString,
     CoreNull,
@@ -548,4 +548,79 @@ pub(crate) fn read_yaml_impl(
         .map_err(|err| api_other(format!("Failed to read `{path}`: {err}")))?;
     let docs = load_yaml_documents(&contents, multi)?;
     docs_to_robj(docs, multi, simplify, handlers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use saphyr::YamlLoader;
+    use saphyr_parser::Parser;
+
+    fn tag_from_scalar(input: &str) -> Tag {
+        let mut loader = YamlLoader::default();
+        loader.early_parse(false);
+
+        let mut parser = Parser::new_from_str(input);
+        parser
+            .load(&mut loader, false)
+            .expect("parser should load tagged scalar");
+
+        let mut docs = loader.into_documents();
+        let doc = docs.pop().expect("expected one document");
+        match doc {
+            Yaml::Representation(_, _, Some(tag)) => tag.into_owned(),
+            other => panic!("expected tagged scalar representation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn canonical_string_tags_cover_all_forms() {
+        let cases = [
+            ("!!str example", ("tag:yaml.org,2002:", "str")),
+            ("!str example", ("!", "str")),
+            ("!<str> example", ("", "str")),
+            ("!<!str> example", ("", "!str")),
+            ("!<!!str> example", ("", "!!str")),
+            (
+                "!<tag:yaml.org,2002:str> example",
+                ("", "tag:yaml.org,2002:str"),
+            ),
+        ];
+
+        for (input, (handle, suffix)) in cases {
+            let tag = tag_from_scalar(input);
+            assert_eq!(tag.handle, handle);
+            assert_eq!(tag.suffix, suffix);
+            assert_eq!(
+                canonical_tag_kind(&tag),
+                Some(CanonicalTagKind::CoreString),
+                "input `{input}` should map to canonical string tag"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_null_tags_cover_all_forms() {
+        let cases = [
+            ("!!null null", ("tag:yaml.org,2002:", "null")),
+            ("!<null> null", ("", "null")),
+            ("!<!null> null", ("", "!null")),
+            ("!<!!null> null", ("", "!!null")),
+            (
+                "!<tag:yaml.org,2002:null> null",
+                ("", "tag:yaml.org,2002:null"),
+            ),
+        ];
+
+        for (input, (handle, suffix)) in cases {
+            let tag = tag_from_scalar(input);
+            assert_eq!(tag.handle, handle);
+            assert_eq!(tag.suffix, suffix);
+            assert_eq!(
+                canonical_tag_kind(&tag),
+                Some(CanonicalTagKind::CoreNull),
+                "input `{input}` should map to canonical null tag"
+            );
+        }
+    }
 }
