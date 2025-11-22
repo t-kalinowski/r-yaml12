@@ -310,6 +310,12 @@ fn convert_tagged(
         }
     }
 
+    if is_timestamp_tag(tag) {
+        if let Some(timestamp) = parse_timestamp_node(node)? {
+            return Ok(timestamp);
+        }
+    }
+
     let value = yaml_to_robj(node, simplify, handlers)?;
     if matches!(classify_tag(tag), TagClass::Canonical(_)) {
         return Ok(value);
@@ -374,6 +380,234 @@ fn make_canonical_tag(kind: CanonicalTagKind) -> Tag {
         handle: "tag:yaml.org,2002:".to_string(),
         suffix: suffix.to_string(),
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum TimestampValue {
+    Date(i64),
+    DateTime(f64),
+}
+
+fn is_timestamp_tag(tag: &Tag) -> bool {
+    matches!(
+        (tag.handle.as_str(), tag.suffix.as_str()),
+        ("tag:yaml.org,2002:", "timestamp")
+            | ("!", "timestamp")
+            | ("", "timestamp")
+            | ("", "!timestamp")
+            | ("", "!!timestamp")
+            | ("", "tag:yaml.org,2002:timestamp")
+    )
+}
+
+fn parse_timestamp_node(node: &mut Yaml) -> Fallible<Option<Robj>> {
+    if let Yaml::Value(Scalar::String(value)) = node {
+        if let Some(parsed) = parse_timestamp_scalar(value.as_ref()) {
+            return timestamp_to_robj(parsed).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn timestamp_to_robj(value: TimestampValue) -> Fallible<Robj> {
+    match value {
+        TimestampValue::Date(days) => {
+            let mut robj = r!(days as f64);
+            robj.set_class(&["Date"])
+                .map_err(|err| api_other(err.to_string()))?;
+            Ok(robj)
+        }
+        TimestampValue::DateTime(seconds) => {
+            let mut robj = r!(seconds);
+            robj.set_class(&["POSIXct", "POSIXt"])
+                .map_err(|err| api_other(err.to_string()))?;
+            let tzone = Strings::from_values(["UTC"]);
+            robj.set_attrib("tzone", tzone)
+                .map_err(|err| api_other(err.to_string()))?;
+            Ok(robj)
+        }
+    }
+}
+
+fn parse_timestamp_scalar(input: &str) -> Option<TimestampValue> {
+    let trimmed = input.trim();
+    let bytes = trimmed.as_bytes();
+    let len = bytes.len();
+    let mut idx = 0usize;
+
+    let (year_raw, next) = parse_exact_digits(bytes, idx, 4)?;
+    let year = year_raw as i32;
+    idx = next;
+    if bytes.get(idx)? != &b'-' {
+        return None;
+    }
+    idx += 1;
+    let (month, next) = parse_exact_digits(bytes, idx, 2)?;
+    idx = next;
+    if bytes.get(idx)? != &b'-' {
+        return None;
+    }
+    idx += 1;
+    let (day, next) = parse_exact_digits(bytes, idx, 2)?;
+    idx = next;
+
+    let date_days = days_from_civil(year, month, day)?;
+    if idx == len {
+        return Some(TimestampValue::Date(date_days));
+    }
+
+    let sep = bytes[idx];
+    if sep != b'T' && sep != b't' && sep != b' ' {
+        return None;
+    }
+    idx += 1;
+
+    let (hour, next) = parse_exact_digits(bytes, idx, 2)?;
+    idx = next;
+    if bytes.get(idx)? != &b':' {
+        return None;
+    }
+    idx += 1;
+
+    let (minute, next) = parse_exact_digits(bytes, idx, 2)?;
+    idx = next;
+    if bytes.get(idx)? != &b':' {
+        return None;
+    }
+    idx += 1;
+
+    let (second, next) = parse_exact_digits(bytes, idx, 2)?;
+    idx = next;
+
+    let mut fraction = 0.0f64;
+    if matches!(bytes.get(idx), Some(b'.')) {
+        idx += 1;
+        let start = idx;
+        while idx < len && bytes[idx].is_ascii_digit() {
+            idx += 1;
+        }
+        if idx == start {
+            return None;
+        }
+        let mut place = 0.1f64;
+        for &digit in &bytes[start..idx] {
+            fraction += (digit - b'0') as f64 * place;
+            place *= 0.1;
+        }
+    }
+
+    while matches!(bytes.get(idx), Some(b' ')) {
+        idx += 1;
+    }
+
+    let mut offset_minutes: i32 = 0;
+    if idx < len {
+        match bytes[idx] {
+            b'Z' | b'z' => {
+                idx += 1;
+            }
+            b'+' | b'-' => {
+                let sign = if bytes[idx] == b'+' { 1i32 } else { -1i32 };
+                idx += 1;
+                let (hours_off, next) = parse_one_or_two_digits(bytes, idx)?;
+                idx = next;
+                let mut minutes_off = 0u32;
+                if matches!(bytes.get(idx), Some(b':')) {
+                    idx += 1;
+                    let (mins, next) = parse_exact_digits(bytes, idx, 2)?;
+                    minutes_off = mins;
+                    idx = next;
+                } else if idx + 2 <= len
+                    && bytes[idx].is_ascii_digit()
+                    && bytes[idx + 1].is_ascii_digit()
+                {
+                    let (mins, next) = parse_exact_digits(bytes, idx, 2)?;
+                    minutes_off = mins;
+                    idx = next;
+                }
+                offset_minutes = sign * (hours_off as i32 * 60 + minutes_off as i32);
+            }
+            _ => return None,
+        }
+
+        while matches!(bytes.get(idx), Some(b' ')) {
+            idx += 1;
+        }
+
+        if idx != len {
+            return None;
+        }
+    }
+
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+
+    let seconds = hour as f64 * 3600.0 + minute as f64 * 60.0 + second as f64 + fraction;
+    let total = date_days as f64 * 86_400.0 + seconds - offset_minutes as f64 * 60.0;
+    Some(TimestampValue::DateTime(total))
+}
+
+fn parse_exact_digits(bytes: &[u8], start: usize, count: usize) -> Option<(u32, usize)> {
+    let end = start.checked_add(count)?;
+    if end > bytes.len() {
+        return None;
+    }
+    let mut value = 0u32;
+    for &digit in &bytes[start..end] {
+        if !digit.is_ascii_digit() {
+            return None;
+        }
+        value = value * 10 + (digit - b'0') as u32;
+    }
+    Some((value, end))
+}
+
+fn parse_one_or_two_digits(bytes: &[u8], start: usize) -> Option<(u32, usize)> {
+    let mut idx = start;
+    let mut value = 0u32;
+    let mut count = 0usize;
+    while idx < bytes.len() && count < 2 && bytes[idx].is_ascii_digit() {
+        value = value * 10 + (bytes[idx] - b'0') as u32;
+        idx += 1;
+        count += 1;
+    }
+    if count == 0 {
+        None
+    } else {
+        Some((value, idx))
+    }
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {
+    if !(1..=12).contains(&month) || day == 0 {
+        return None;
+    }
+    let dim = days_in_month(year, month);
+    if day > dim {
+        return None;
+    }
+
+    let y = year - i32::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (month as i32 + if month > 2 { -3 } else { 9 }) + 2) / 5 + day as i32 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era as i64) * 146_097 + (doe as i64) - 719_468)
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
 fn is_canonical_null_tag(tag: &str) -> bool {

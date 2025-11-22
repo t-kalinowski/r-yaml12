@@ -148,6 +148,20 @@ test_that("parse_yaml preserves YAML tags", {
   expect_identical(tagged$values, structure(c(1L, 2L), yaml_tag = "!seq"))
 })
 
+test_that("parse_yaml parses explicit timestamps", {
+  ts <- parse_yaml("!!timestamp 2024-01-02T03:04:05Z")
+  expect_s3_class(ts, "POSIXct")
+  expect_identical(attr(ts, "tzone"), "UTC")
+  expect_equal(
+    as.numeric(ts),
+    as.numeric(as.POSIXct("2024-01-02 03:04:05", tz = "UTC"))
+  )
+
+  date_only <- parse_yaml("!!timestamp 2024-01-02")
+  expect_s3_class(date_only, "Date")
+  expect_identical(as.integer(date_only), as.integer(as.Date("2024-01-02")))
+})
+
 test_that("parse_yaml applies handlers to tagged nodes", {
   handlers <- list(
     "!expr" = function(x) eval(str2lang(x), baseenv()),
