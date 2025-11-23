@@ -233,6 +233,7 @@ pub(crate) fn tzone_from_offset_minutes(minutes: i32) -> Option<String> {
     Some(format!("Etc/GMT{hours:+}", hours = -hours))
 }
 
+#[allow(dead_code)]
 pub(crate) fn olson_from_offset_minutes(minutes: i32) -> Option<String> {
     if minutes % 60 != 0 {
         return None;

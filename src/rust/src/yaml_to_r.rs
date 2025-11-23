@@ -204,6 +204,11 @@ fn sequence_to_robj(
         }
     }
 
+    // can't simplify via scalar types; try timestamp-aware simplification
+    if let Some(out) = simplify_timestamp_sequence(seq)? {
+        return Ok(out);
+    }
+
     // can't simplify, return a list
     let mut values = Vec::with_capacity(seq.len());
     for node in seq {
@@ -412,6 +417,79 @@ fn parse_timestamp_node(
             return timestamp_to_robj(parsed, preserve_tzone, keep_empty_tzone).map(Some);
         }
     }
+    Ok(None)
+}
+
+fn simplify_timestamp_sequence(seq: &mut [Yaml]) -> Fallible<Option<Robj>> {
+    let mut date_vals: Vec<f64> = Vec::new();
+    let mut posix_vals: Vec<f64> = Vec::new();
+    let mut posix_tzone: Option<String> = None;
+
+    for node in seq.iter_mut() {
+        resolve_representation(node, true);
+        let Yaml::Tagged(tag, inner) = node else {
+            return Ok(None);
+        };
+        if !is_timestamp_tag(tag.as_ref()) {
+            return Ok(None);
+        }
+
+        let keep_empty_tzone = tag.handle.as_str() == "!";
+        let Some(val) = parse_timestamp_node(inner.as_mut(), true, keep_empty_tzone)? else {
+            return Ok(None);
+        };
+
+        if val.inherits("Date") {
+            let slice = val
+                .as_real_slice()
+                .and_then(|s| s.first().copied())
+                .ok_or_else(|| api_other("Expected Date scalar"))?;
+            date_vals.push(slice);
+            continue;
+        }
+
+        if val.inherits("POSIXct") {
+            let slice = val
+                .as_real_slice()
+                .and_then(|s| s.first().copied())
+                .ok_or_else(|| api_other("Expected POSIXct scalar"))?;
+            posix_vals.push(slice);
+
+            if let Some(tzone_attr) = val.get_attrib("tzone") {
+                if let Some(mut iter) = tzone_attr.as_str_iter() {
+                    if let Some(tz) = iter.next() {
+                        match &posix_tzone {
+                            None => posix_tzone = Some(tz.to_string()),
+                            Some(existing) if existing != tz => return Ok(None),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        return Ok(None);
+    }
+
+    if !date_vals.is_empty() && posix_vals.is_empty() {
+        let mut out = Doubles::from_values(date_vals).into_robj();
+        out.set_class(&["Date"])
+            .map_err(|err| api_other(err.to_string()))?;
+        return Ok(Some(out));
+    }
+
+    if !posix_vals.is_empty() && date_vals.is_empty() {
+        let mut out = Doubles::from_values(posix_vals).into_robj();
+        out.set_class(&["POSIXct", "POSIXt"])
+            .map_err(|err| api_other(err.to_string()))?;
+        if let Some(tz) = posix_tzone {
+            out.set_attrib("tzone", Strings::from_values([tz]))
+                .map_err(|err| api_other(err.to_string()))?;
+        }
+        return Ok(Some(out));
+    }
+
     Ok(None)
 }
 

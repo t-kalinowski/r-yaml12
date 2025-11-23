@@ -212,3 +212,19 @@ test_that("POSIXct values round-trip with format_yaml/parse_yaml", {
     "Etc/GMT-3"
   )
 })
+
+test_that("Date sequences round-trip with format_yaml/parse_yaml", {
+  dates <- seq.Date(as.Date("1000-01-01"), as.Date("3000-01-01"), by = "day")
+  expect_equal(parse_yaml(format_yaml(dates)), dates)
+})
+
+test_that("POSIXct round-trips with format_yaml/parse_yaml", {
+  x <- .POSIXct(runif(10000, ISOdate(1000, 1, 1), ISOdate(3000, 1, 1)))
+  expect_equal(x, parse_yaml(format_yaml(x)))
+
+  x <- .POSIXct(runif(10000, ISOdate(1900, 1, 1), ISOdate(2100, 1, 1)))
+  expect_equal(x, parse_yaml(format_yaml(x)))
+
+  x <- .POSIXct(runif(10000, ISOdate(1960, 1, 1), ISOdate(2025, 1, 1)))
+  expect_equal(x, parse_yaml(format_yaml(x)))
+})
