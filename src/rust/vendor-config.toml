@@ -1,8 +1,9 @@
 [source.crates-io]
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/extendr/extendr"]
+[source."git+https://github.com/extendr/extendr?rev=a3e35fb42a008d0c209e61d994143d00a86e350f"]
 git = "https://github.com/extendr/extendr"
+rev = "a3e35fb42a008d0c209e61d994143d00a86e350f"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/t-kalinowski/saphyr?branch=r-patched"]

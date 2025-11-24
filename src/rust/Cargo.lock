@@ -32,7 +32,7 @@ dependencies = [
 [[package]]
 name = "extendr-api"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr#46aa9ed47455a5188c362745e92166bc2ed7cab6"
+source = "git+https://github.com/extendr/extendr?rev=a3e35fb42a008d0c209e61d994143d00a86e350f#a3e35fb42a008d0c209e61d994143d00a86e350f"
 dependencies = [
  "extendr-ffi",
  "extendr-macros",
@@ -43,12 +43,12 @@ dependencies = [
 [[package]]
 name = "extendr-ffi"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr#46aa9ed47455a5188c362745e92166bc2ed7cab6"
+source = "git+https://github.com/extendr/extendr?rev=a3e35fb42a008d0c209e61d994143d00a86e350f#a3e35fb42a008d0c209e61d994143d00a86e350f"
 
 [[package]]
 name = "extendr-macros"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr#46aa9ed47455a5188c362745e92166bc2ed7cab6"
+source = "git+https://github.com/extendr/extendr?rev=a3e35fb42a008d0c209e61d994143d00a86e350f#a3e35fb42a008d0c209e61d994143d00a86e350f"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -137,7 +137,7 @@ dependencies = [
 [[package]]
 name = "saphyr"
 version = "0.0.6"
-source = "git+https://github.com/t-kalinowski/saphyr?branch=r-patched#2a7d4a3a3ec74a880bb56201f91c3c5a132c6db0"
+source = "git+https://github.com/t-kalinowski/saphyr?branch=r-patched#73f6994fd5dbfa7350adb3fe2f01653bb03befaf"
 dependencies = [
  "encoding_rs",
  "hashlink",
@@ -149,7 +149,7 @@ dependencies = [
 [[package]]
 name = "saphyr-parser"
 version = "0.0.6"
-source = "git+https://github.com/t-kalinowski/saphyr?branch=r-patched#2a7d4a3a3ec74a880bb56201f91c3c5a132c6db0"
+source = "git+https://github.com/t-kalinowski/saphyr?branch=r-patched#73f6994fd5dbfa7350adb3fe2f01653bb03befaf"
 dependencies = [
  "arraydeque",
  "thiserror",
