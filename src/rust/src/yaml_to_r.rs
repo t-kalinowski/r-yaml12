@@ -1,5 +1,5 @@
 use crate::handlers::HandlerRegistry;
-use crate::timestamp::{is_timestamp_tag, parse_timestamp_scalar, timestamp_to_robj};
+use crate::timestamp::{is_timestamp_tag, parse_timestamp_node, simplify_timestamp_sequence};
 use crate::unwind::EvalError;
 use crate::warning::emit_warning;
 use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible, TIMESTAMP_SUPPORT_ENABLED};
@@ -215,8 +215,12 @@ fn sequence_to_robj(
     }
 
     // can't simplify via scalar types; try timestamp-aware simplification
-    if let Some(out) = simplify_timestamp_sequence(seq)? {
-        return Ok(out);
+    if TIMESTAMP_SUPPORT_ENABLED {
+        if let Some(out) =
+            simplify_timestamp_sequence(seq, |node| resolve_representation(node, true))?
+        {
+            return Ok(out);
+        }
     }
 
     // can't simplify, return a list
@@ -429,96 +433,6 @@ fn make_canonical_tag(kind: CanonicalTagKind) -> Tag {
         handle: "tag:yaml.org,2002:".to_string(),
         suffix: suffix.to_string(),
     }
-}
-
-fn parse_timestamp_node(
-    node: &mut Yaml,
-    preserve_tzone: bool,
-    keep_empty_tzone: bool,
-) -> Fallible<Option<Robj>> {
-    if let Yaml::Value(Scalar::String(value)) = node {
-        if let Some(parsed) = parse_timestamp_scalar(value.as_ref()) {
-            return timestamp_to_robj(parsed, preserve_tzone, keep_empty_tzone).map(Some);
-        }
-    }
-    Ok(None)
-}
-
-fn simplify_timestamp_sequence(seq: &mut [Yaml]) -> Fallible<Option<Robj>> {
-    if !TIMESTAMP_SUPPORT_ENABLED {
-        return Ok(None);
-    }
-
-    let mut date_vals: Vec<f64> = Vec::new();
-    let mut posix_vals: Vec<f64> = Vec::new();
-    let mut posix_tzone: Option<String> = None;
-
-    for node in seq.iter_mut() {
-        resolve_representation(node, true);
-        let Yaml::Tagged(tag, inner) = node else {
-            return Ok(None);
-        };
-        if !is_timestamp_tag(tag.as_ref()) {
-            return Ok(None);
-        }
-
-        let keep_empty_tzone = tag.handle.as_str() == "!";
-        let Some(val) = parse_timestamp_node(inner.as_mut(), true, keep_empty_tzone)? else {
-            return Ok(None);
-        };
-
-        if val.inherits("Date") {
-            let slice = val
-                .as_real_slice()
-                .and_then(|s| s.first().copied())
-                .ok_or_else(|| api_other("Expected Date scalar"))?;
-            date_vals.push(slice);
-            continue;
-        }
-
-        if val.inherits("POSIXct") {
-            let slice = val
-                .as_real_slice()
-                .and_then(|s| s.first().copied())
-                .ok_or_else(|| api_other("Expected POSIXct scalar"))?;
-            posix_vals.push(slice);
-
-            if let Some(tzone_attr) = val.get_attrib("tzone") {
-                if let Some(mut iter) = tzone_attr.as_str_iter() {
-                    if let Some(tz) = iter.next() {
-                        match &posix_tzone {
-                            None => posix_tzone = Some(tz.to_string()),
-                            Some(existing) if existing != tz => return Ok(None),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            continue;
-        }
-
-        return Ok(None);
-    }
-
-    if !date_vals.is_empty() && posix_vals.is_empty() {
-        let mut out = Doubles::from_values(date_vals).into_robj();
-        out.set_class(&["Date"])
-            .map_err(|err| api_other(err.to_string()))?;
-        return Ok(Some(out));
-    }
-
-    if !posix_vals.is_empty() && date_vals.is_empty() {
-        let mut out = Doubles::from_values(posix_vals).into_robj();
-        out.set_class(&["POSIXct", "POSIXt"])
-            .map_err(|err| api_other(err.to_string()))?;
-        if let Some(tz) = posix_tzone {
-            out.set_attrib("tzone", Strings::from_values([tz]))
-                .map_err(|err| api_other(err.to_string()))?;
-        }
-        return Ok(Some(out));
-    }
-
-    Ok(None)
 }
 
 fn is_canonical_null_tag(tag: &str) -> bool {
