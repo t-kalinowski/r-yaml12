@@ -316,7 +316,6 @@ test_that("parse_yaml() warnings are catchable and respect options(warn)", {
 test_that("parse_yaml resolves all canonical null tag spellings", {
   canonical_cases <- c(
     "!!null ~",
-    "!<!!null> ~",
     "!<tag:yaml.org,2002:null> ~"
   )
   for (yaml in canonical_cases) {
@@ -325,12 +324,18 @@ test_that("parse_yaml resolves all canonical null tag spellings", {
     expect_null(attr(parsed, "yaml_tag", exact = TRUE))
   }
 
-  informative <- parse_yaml("!<!null> ~", simplify = FALSE)
-  expect_identical(informative, NULL)
-  expect_null(attr(informative, "yaml_tag", exact = TRUE))
-
-  custom <- parse_yaml("!null ~", simplify = FALSE)
-  expect_identical(custom, structure("~", yaml_tag = "!null"))
+  informative_cases <- list(
+    "!<!!null> ~" = "!!null",
+    "!<!null> ~" = "!null",
+    "!null ~" = "!null"
+  )
+  for (yaml in names(informative_cases)) {
+    parsed <- parse_yaml(yaml, simplify = FALSE)
+    expect_identical(
+      parsed,
+      structure("~", yaml_tag = informative_cases[[yaml]])
+    )
+  }
 })
 
 test_that("parse_yaml errors clearly on invalid canonical tags", {

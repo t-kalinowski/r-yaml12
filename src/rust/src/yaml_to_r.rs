@@ -366,13 +366,6 @@ fn convert_tagged(
     set_yaml_tag_attr(value, tag)
 }
 
-fn render_tag(tag: &Tag) -> String {
-    let mut rendered = String::with_capacity(tag.handle.len() + tag.suffix.len());
-    rendered.push_str(tag.handle.as_str());
-    rendered.push_str(tag.suffix.as_str());
-    rendered
-}
-
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum CanonicalTagKind {
     CoreString,
@@ -399,19 +392,13 @@ fn is_core_tag_without_attr(tag: &Tag) -> bool {
 }
 
 fn canonical_tag_kind(tag: &Tag) -> Option<CanonicalTagKind> {
-    if tag.is_yaml_core_schema() {
-        return match tag.suffix.as_str() {
-            "str" => Some(CanonicalTagKind::CoreString),
-            "null" => Some(CanonicalTagKind::CoreNull),
-            _ => None,
-        };
+    if !tag.is_yaml_core_schema() {
+        return None;
     }
 
-    let suffix = tag.suffix.as_str().trim_start_matches('!');
-    let suffix = suffix.strip_prefix("tag:yaml.org,2002:").unwrap_or(suffix);
-    match suffix {
+    match tag.suffix.as_str() {
         "str" => Some(CanonicalTagKind::CoreString),
-        "null" if tag.handle.as_str() != "!" => Some(CanonicalTagKind::CoreNull),
+        "null" => Some(CanonicalTagKind::CoreNull),
         _ => None,
     }
 }
@@ -438,9 +425,10 @@ fn make_canonical_tag(kind: CanonicalTagKind) -> Tag {
 }
 
 fn set_yaml_tag_attr(mut value: Robj, tag: &Tag) -> Fallible<Robj> {
-    let rendered_tag = render_tag(tag);
+    let mut rendered_tag = String::with_capacity(tag.handle.len() + tag.suffix.len());
+    rendered_tag.push_str(tag.handle.as_str());
+    rendered_tag.push_str(tag.suffix.as_str());
 
-    // R NULL cannot carry attributes; skip instead of erroring and panicking
     if rendered_tag.is_empty() {
         return Ok(value);
     }
@@ -646,8 +634,9 @@ mod tests {
                 Yaml::Tagged(tag, inner) => {
                     assert_eq!(
                         canonical_tag_kind(&tag).is_some(),
-                        normalized_suffix(tag.suffix.as_str()) == "str",
-                        "input `{input}` canonical detection should match plain `str` suffix",
+                        tag.is_yaml_core_schema()
+                            && normalized_suffix(tag.suffix.as_str()) == "str",
+                        "input `{input}` canonical detection should match core `str` suffix",
                     );
                     match (expected_value, inner.as_ref()) {
                         (ParsedValueKind::Boolean, Yaml::Value(Scalar::Boolean(value))) => {
@@ -696,9 +685,9 @@ mod tests {
                 Yaml::Tagged(tag, inner) => {
                     assert_eq!(
                         canonical_tag_kind(&tag).is_some(),
-                        normalized_suffix(tag.suffix.as_str()) == "null"
-                            && tag.handle.as_str() != "!",
-                        "input `{input}` canonical detection should match plain `null` suffix",
+                        tag.is_yaml_core_schema()
+                            && normalized_suffix(tag.suffix.as_str()) == "null",
+                        "input `{input}` canonical detection should match core `null` suffix",
                     );
                     assert!(
                         matches!(inner.as_ref(), Yaml::Value(Scalar::Null)),
