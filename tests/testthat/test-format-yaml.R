@@ -71,6 +71,15 @@ test_that("format_yaml round-trips multi-document streams", {
   expect_identical(parsed, docs)
 })
 
+test_that("format_yaml with multi = TRUE rejects named lists", {
+  docs <- list(a = list(foo = 1L), b = list(bar = 2L))
+  expect_error(
+    format_yaml(docs, multi = TRUE),
+    "`value` must be an unnamed list when `multi = TRUE` (names must be NULL)",
+    fixed = TRUE
+  )
+})
+
 test_that("format_yaml single-document output has no header or trailing newline", {
   obj <- list(foo = 1L)
   encoded <- format_yaml(obj)

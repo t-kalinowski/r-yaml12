@@ -349,6 +349,11 @@ pub(crate) fn format_yaml_impl(value: &Robj, multi: bool) -> Fallible<String> {
         let list = value.as_list().ok_or_else(|| {
             Error::Other("`value` must be a list when `multi = TRUE`".to_string())
         })?;
+        if list.names().is_some() {
+            return Err(api_other(
+                "`value` must be an unnamed list when `multi = TRUE` (names must be NULL)",
+            ));
+        }
         let mut docs = Vec::with_capacity(list.len());
         for doc in list.values() {
             docs.push(robj_to_yaml(&doc)?);
