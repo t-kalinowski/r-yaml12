@@ -22,6 +22,11 @@ NULL
 #' @export
 parse_yaml <- function(text, multi = FALSE, simplify = TRUE, handlers = NULL) .Call(wrap__parse_yaml, text, multi, simplify, handlers)
 
+#' Debug helper: print saphyr `Yaml` nodes without converting to R objects.
+#'
+#' @noRd
+dbg_yaml <- function(text) invisible(.Call(wrap__dbg_yaml, text))
+
 #' Format an R object as YAML 1.2.
 #'
 #' When `multi = TRUE`, emits document start markers (`---`) and ends the
@@ -35,11 +40,11 @@ parse_yaml <- function(text, multi = FALSE, simplify = TRUE, handlers = NULL) .C
 #' @export
 #' @examples
 #' cat(format_yaml(list(foo = 1, bar = list(TRUE, NA))))
-#' 
+#'
 #' docs <- list("first", "second")
 #' cat(format_yaml(docs, multi = TRUE))
 #'
-#' tagged <- structure("1 + x", yaml_tag = "!expr")
+#' tagged <- structure("1 + 1", yaml_tag = "!expr")
 #' cat(tagged_yaml <- format_yaml(tagged), "\n")
 #' attr(parse_yaml(tagged_yaml), "yaml_tag")
 format_yaml <- function(value, multi = FALSE) .Call(wrap__format_yaml, value, multi)
@@ -70,7 +75,7 @@ read_yaml <- function(path, multi = FALSE, simplify = TRUE, handlers = NULL) .Ca
 #'
 #' write_yaml(list("foo", "bar"), multi = TRUE)
 #'
-#' tagged <- structure("1 + x", yaml_tag = "!expr")
+#' tagged <- structure("1 + 1", yaml_tag = "!expr")
 #' write_yaml(tagged)
 write_yaml <- function(value, path = NULL, multi = FALSE) invisible(.Call(wrap__write_yaml, value, path, multi))
 

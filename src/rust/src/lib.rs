@@ -7,6 +7,7 @@ mod yaml_to_r;
 
 use crate::r_to_yaml::yaml_body;
 use extendr_api::prelude::*;
+use saphyr::{LoadableYamlNode, Yaml};
 use std::result::Result as StdResult;
 use std::{cell::OnceCell, thread_local};
 use unwind::EvalError;
@@ -137,6 +138,39 @@ fn parse_yaml(
     handle_eval_error(result.unwrap_err())
 }
 
+/// Debug helper: print saphyr `Yaml` nodes without converting to R objects.
+///
+/// @noRd
+#[extendr(invisible)]
+fn dbg_yaml(text: Strings) -> Robj {
+    let result: Fallible<()> = (|| -> Fallible<()> {
+        if text.len() == 0 {
+            return Ok(());
+        }
+
+        let mut joined = String::new();
+        for (idx, part) in text.iter().enumerate() {
+            if part.is_na() {
+                Err(api_other("`text` must not contain NA strings"))?;
+            }
+            if idx > 0 {
+                joined.push('\n');
+            }
+            joined.push_str(part.as_ref());
+        }
+
+        let docs = Yaml::load_from_str(&joined)
+            .map_err(|err| api_other(format!("YAML parse error: {err}")))?;
+        rprintln!("{:#?}", docs);
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => NULL.into(),
+        Err(err) => handle_eval_error(err),
+    }
+}
+
 /// Read YAML 1.2 document(s) from a file path.
 ///
 /// @param path Scalar string path to a YAML file.
@@ -210,6 +244,7 @@ fn write_yaml(
 extendr_module! {
     mod yaml12;
     fn parse_yaml;
+    fn dbg_yaml;
     fn format_yaml;
     fn read_yaml;
     fn write_yaml;

@@ -141,8 +141,9 @@ pub(crate) fn parse_timestamp_scalar(input: &str) -> Option<TimestampValue> {
                     minutes_off = mins;
                     idx = next;
                 }
-                parsed_tz =
-                    ParsedTz::Offset { minutes: sign * (hours_off as i32 * 60 + minutes_off as i32) };
+                parsed_tz = ParsedTz::Offset {
+                    minutes: sign * (hours_off as i32 * 60 + minutes_off as i32),
+                };
             }
             _ => return None,
         }
@@ -456,7 +457,13 @@ fn posix_seconds_from_robj(robj: &Robj) -> Fallible<Vec<Option<f64>>> {
     if let Some(ints) = robj.as_integer_slice() {
         return Ok(ints
             .iter()
-            .map(|v| if *v == i32::MIN { None } else { Some(*v as f64) })
+            .map(|v| {
+                if *v == i32::MIN {
+                    None
+                } else {
+                    Some(*v as f64)
+                }
+            })
             .collect());
     }
     Err(api_other("Expected a numeric POSIXct vector"))

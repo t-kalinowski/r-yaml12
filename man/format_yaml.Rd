@@ -26,7 +26,7 @@ cat(format_yaml(list(foo = 1, bar = list(TRUE, NA))))
 docs <- list("first", "second")
 cat(format_yaml(docs, multi = TRUE))
 
-tagged <- structure("1 + x", yaml_tag = "!expr")
+tagged <- structure("1 + 1", yaml_tag = "!expr")
 cat(tagged_yaml <- format_yaml(tagged), "\n")
 attr(parse_yaml(tagged_yaml), "yaml_tag")
 }

@@ -42,11 +42,20 @@ fn resolve_representation(node: &mut Yaml, _simplify: bool) {
                     } else {
                         let parsed =
                             Yaml::value_from_cow_and_metadata(value, style, Some(&core_tag));
-                        if matches!(parsed, Yaml::BadValue) && is_timestamp_tag(core_tag.as_ref()) {
-                            Yaml::Tagged(
-                                core_tag,
-                                Box::new(Yaml::Value(Scalar::String(value_for_tagged))),
-                            )
+                        if matches!(parsed, Yaml::BadValue) {
+                            let suffix = core_tag.as_ref().suffix.as_str();
+                            let is_known_core_scalar =
+                                matches!(suffix, "bool" | "int" | "float" | "null" | "str");
+                            // Preserve unknown core-schema tags (e.g., !!binary) as tagged strings;
+                            // keep failures for known core scalar tags as BadValue so they error.
+                            if is_known_core_scalar {
+                                parsed
+                            } else {
+                                Yaml::Tagged(
+                                    core_tag,
+                                    Box::new(Yaml::Value(Scalar::String(value_for_tagged))),
+                                )
+                            }
                         } else {
                             parsed
                         }
@@ -61,6 +70,7 @@ fn resolve_representation(node: &mut Yaml, _simplify: bool) {
         None if is_plain_empty => Yaml::Value(Scalar::Null),
         None => Yaml::value_from_cow_and_metadata(value, style, None),
     };
+
     *node = parsed;
 }
 
@@ -342,6 +352,9 @@ fn convert_tagged(
     }
 
     let value = yaml_to_robj(node, simplify, handlers)?;
+    if is_core_tag_without_attr(tag) {
+        return Ok(value);
+    }
     if matches!(classify_tag(tag), TagClass::Canonical(_)) {
         return Ok(value);
     }
@@ -367,6 +380,20 @@ enum TagClass {
     Canonical(CanonicalTagKind),
     Core,
     NonCore,
+}
+
+fn is_set_tag(tag: &Tag) -> bool {
+    tag.handle.as_str() == "tag:yaml.org,2002:" && tag.suffix.as_str() == "set"
+}
+
+fn is_core_tag_without_attr(tag: &Tag) -> bool {
+    if !tag.is_yaml_core_schema() {
+        return false;
+    }
+    matches!(
+        tag.suffix.as_str(),
+        "timestamp" | "set" | "omap" | "pairs" | "seq" | "map"
+    )
 }
 
 fn canonical_tag_kind(tag: &Tag) -> Option<CanonicalTagKind> {

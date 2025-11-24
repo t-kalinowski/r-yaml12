@@ -27,6 +27,6 @@ write_yaml(list(foo = 1, bar = list(2, "baz")))
 
 write_yaml(list("foo", "bar"), multi = TRUE)
 
-tagged <- structure("1 + x", yaml_tag = "!expr")
+tagged <- structure("1 + 1", yaml_tag = "!expr")
 write_yaml(tagged)
 }

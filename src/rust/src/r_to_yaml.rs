@@ -188,31 +188,26 @@ fn posix_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let tz_name = tz_attr.as_deref().filter(|s| !s.is_empty());
 
     enum PosixTz<'a> {
-        Naive,
+        NaiveLocal,
         Utc,
-        Fixed {
-            offset_minutes: i32,
-        },
+        Fixed { offset_minutes: i32 },
         Named(Cow<'a, str>),
     }
 
     let tz_kind = match tz_name {
-        None => PosixTz::Naive,
-        Some(tz) => {
-            if let Some(offset_minutes) = offset_minutes_from_tzone(tz) {
-                if offset_minutes == 0 {
-                    PosixTz::Utc
-                } else {
-                    PosixTz::Fixed { offset_minutes }
-                }
-            } else {
-                PosixTz::Named(Cow::Owned(tz.to_string()))
-            }
-        }
+        None => PosixTz::NaiveLocal,
+        Some(tz) => match offset_minutes_from_tzone(tz) {
+            Some(0) => PosixTz::Utc,
+            Some(offset_minutes) => PosixTz::Fixed { offset_minutes },
+            None => PosixTz::Named(Cow::Owned(tz.to_string())),
+        },
     };
 
     let formatted = match tz_kind {
-        PosixTz::Naive => format_posix_precise(robj, 0, true, false)?,
+        PosixTz::NaiveLocal => {
+            let offset_minutes = local_offset_minutes(robj)?;
+            format_posix_precise(robj, offset_minutes, true, false)?
+        }
         PosixTz::Utc => format_posix_precise(robj, 0, false, true)?,
         PosixTz::Fixed { offset_minutes, .. } => {
             format_posix_precise(robj, offset_minutes, false, false)?
@@ -229,6 +224,16 @@ fn posix_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
 fn date_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
     let formatted = format_r_time(robj, "%Y-%m-%d", None)?;
     Ok(yaml_from_formatted_timestamp(formatted))
+}
+
+fn local_offset_minutes(robj: &Robj) -> Fallible<i32> {
+    let formatted = format_r_time(robj, "%z", None)?;
+    let minutes = formatted
+        .into_iter()
+        .flatten()
+        .find_map(|s| offset_minutes_from_tzone(&s))
+        .unwrap_or(0);
+    Ok(minutes)
 }
 
 fn list_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
