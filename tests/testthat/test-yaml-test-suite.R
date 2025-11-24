@@ -117,8 +117,16 @@ for (case in test_cases) {
 
       parsed_tags <- collect_yaml_tags(parsed)
       expected_tags <- extract_event_tags(case)
+      allowed_core_tags <- c(
+        "tag:yaml.org,2002:timestamp",
+        "tag:yaml.org,2002:set",
+        "tag:yaml.org,2002:omap",
+        "tag:yaml.org,2002:pairs",
+        "tag:yaml.org,2002:binary"
+      )
       expected_non_core_tags <- expected_tags[
-        !startsWith(expected_tags, "tag:yaml.org,2002:")
+        !startsWith(expected_tags, "tag:yaml.org,2002:") |
+          expected_tags %in% allowed_core_tags
       ]
       expect_equal(
         sort(unique(parsed_tags)),

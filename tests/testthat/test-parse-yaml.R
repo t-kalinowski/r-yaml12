@@ -63,6 +63,27 @@ bar: baz
   expect_error(parse_yaml(c("foo: 1", NA_character_)), "must not contain NA")
 })
 
+test_that("timestamp tags keep yaml_tag when timestamp support is disabled", {
+  yaml <- "
+- !!timestamp 2025-01-01
+- !!timestamp 2025-01-01 21:59:43.10 -5
+"
+  parsed <- parse_yaml(yaml)
+  expect_length(parsed, 2)
+
+  expect_identical(as.character(parsed[[1]]), "2025-01-01")
+  expect_identical(
+    attr(parsed[[1]], "yaml_tag", exact = TRUE),
+    "tag:yaml.org,2002:timestamp"
+  )
+
+  expect_identical(as.character(parsed[[2]]), "2025-01-01 21:59:43.10 -5")
+  expect_identical(
+    attr(parsed[[2]], "yaml_tag", exact = TRUE),
+    "tag:yaml.org,2002:timestamp"
+  )
+})
+
 test_that("parse_yaml handles multiple documents when requested", {
   yaml <- r"--(
 ---

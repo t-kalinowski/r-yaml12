@@ -31,7 +31,10 @@ fn resolve_representation(node: &mut Yaml, _simplify: bool) {
                             Yaml::value_from_cow_and_metadata(value, style, Some(&tag))
                         }
                     }
-                    _ if is_timestamp_tag(tag.as_ref()) => {
+                    // _ if is_timestamp_tag(tag.as_ref()) => {
+                    //     Yaml::Tagged(tag, Box::new(Yaml::Value(Scalar::String(value))))
+                    // }
+                    "binary" | "set" | "omap" | "pairs" | "timestamp" => {
                         Yaml::Tagged(tag, Box::new(Yaml::Value(Scalar::String(value))))
                     }
                     _ => {
@@ -339,8 +342,15 @@ fn convert_tagged(
     }
 
     let value = yaml_to_robj(node, simplify, handlers)?;
-    if tag.is_yaml_core_schema() && (TIMESTAMP_SUPPORT_ENABLED || !is_timestamp_tag(tag)) {
-        return Ok(value);
+    if tag.is_yaml_core_schema() {
+        return match tag.suffix.as_str() {
+            "str" | "null" | "bool" | "int" | "float" | "seq" | "map" => Ok(value),
+            "timestamp" | "set" | "omap" | "pairs" | "binary" => set_yaml_tag_attr(value, tag),
+            other => Err(api_other(format!(
+                "Unsupported core-schema tag `{handle}{other}`",
+                handle = tag.handle
+            ))),
+        };
     }
 
     set_yaml_tag_attr(value, tag)
