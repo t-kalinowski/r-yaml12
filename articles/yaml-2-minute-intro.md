@@ -1,0 +1,264 @@
+# YAML in 2 Minutes: A Gentle Introduction for R Users
+
+``` r
+library(yaml12)
+```
+
+Here’s a short introduction to YAML for R users. YAML is a data
+serialization format designed to be easily human readable.
+
+Think of YAML as “JSON with comments and nicer multiline strings.”
+`yaml12` parses YAML 1.2 (the modern specification that removes some of
+YAML 1.1’s surprising eager conversions) into plain R objects.
+
+YAML has three building blocks: **scalars** (single values),
+**sequences** (ordered collection of items), and **mappings** (key/value
+pairs with unique keys). JSON is a subset of YAML 1.2, so all valid JSON
+is also valid YAML and parses the same way.
+
+## A first example
+
+``` yaml
+title: A Modern YAML parser written in Rust
+properties: [correct, safe, fast, simple]
+score: 9.5
+categories:
+  - yaml
+  - r
+  - example
+settings:
+  simplify: true
+  note: >
+    This is a folded block
+    that turns line breaks
+    into spaces.
+  note_literal: |
+    This is a literal block
+    that keeps
+    line breaks.
+```
+
+``` r
+str(parse_yaml(first_example))
+#> List of 5
+#>  $ title     : chr "A Modern YAML parser written in Rust"
+#>  $ properties: chr [1:4] "correct" "safe" "fast" "simple"
+#>  $ score     : num 9.5
+#>  $ categories: chr [1:3] "yaml" "r" "example"
+#>  $ settings  :List of 3
+#>   ..$ simplify    : logi TRUE
+#>   ..$ note        : chr "This is a folded block that turns line breaks into spaces.\n"
+#>   ..$ note_literal: chr "This is a literal block\nthat keeps\nline breaks.\n"
+```
+
+## Collections
+
+There are two “collection” types: Sequences and Mappings.
+
+### Sequences: YAML’s ordered collections
+
+A sequence is a list of items. Each item begins with `-` at the parent
+indent.
+
+``` yaml
+- cat
+- dog
+```
+
+→ `c("cat", "dog")` (or `list("cat", "dog")` when `simplify = FALSE`)
+
+JSON-style arrays work too:
+
+``` yaml
+[cat, dog]
+```
+
+→ same result
+
+Anything belonging to one of the sequence entries is indented at least
+one space past the dash:
+
+``` yaml
+- name: cat
+  toys: [string, box]
+- name: dog
+  toys: [ball, bone]
+```
+
+↓
+
+``` r
+list(
+  list(name = "cat", toys = c("string", "box")),
+  list(name = "dog", toys = c("ball", "bone"))
+)
+```
+
+### Mappings: key/value pairs
+
+A mapping is a set of `key: value` pairs at the same indent:
+
+``` yaml
+foo: 1
+bar: true
+```
+
+→ `list(foo = 1L, bar = TRUE)`
+
+A key at its indent owns anything indented more:
+
+``` yaml
+settings:
+  simplify: true
+  max_items: 3
+```
+
+→ `list(settings = list(simplify = TRUE, max_items = 3L))`
+
+JSON-style objects also work:
+
+``` yaml
+{a: true}
+```
+
+→ `list(a = TRUE)`
+
+Mappings become named lists in R.
+
+## Scalars
+
+All nodes that are not collections are Scalars; these are the leaf nodes
+of a YAML document.
+
+Scalars can be provided in three forms: block, quoted, or plain.
+
+### Block scalars
+
+`|` starts a **literal** block that keeps newlines; `>` starts a
+**folded** block that joins lines with spaces (except blank/indented
+lines keep breaks). Block scalars always become strings.
+
+``` yaml
+|
+  hello
+  world
+```
+
+→ `"hello\nworld\n"`
+
+``` yaml
+>
+  hello
+  world
+```
+
+→ `"hello world\n"`
+
+## Quoted scalars
+
+Like block scalars, quoted scalars always resolve to strings. Double
+quotes interpret escapes (`\n`, `\t`, `\\`, `\"`). Single quotes are
+literal and do not interpret escapes, except for `''` which is parsed as
+a single `'`.
+
+``` yaml
+["line\nbreak", "quote: \"here\""]
+```
+
+→ `c("line\nbreak", 'quote: "here"')`
+
+``` yaml
+['line\nbreak', 'quote: ''here''']
+```
+
+→ `c("line\\nbreak", "quote: 'here'")`
+
+## Plain (unquoted) scalars
+
+If a node is not a sequence, mapping, block scalar, or quoted scalar, it
+is a *plain* scalar.
+
+Plain nodes can resolve to one of five types: string, int, float, bool,
+or null.
+
+YAML 1.2 uses simple rules to then infer the type of a plain node:
+
+- `true` / `false` → `TRUE` / `FALSE`
+- `null`, `~`, or empty → `NULL`
+- numbers: signed, decimal, scientific, hex (`0x`), octal (`0o`),
+  `.inf`, `.nan` → [`numeric()`](https://rdrr.io/r/base/numeric.html) or
+  [`integer()`](https://rdrr.io/r/base/integer.html)
+- everything else stays a string (`yes`, `no`, `on`, `off` and other
+  aliases remain strings in YAML 1.2)
+
+``` yaml
+[true, 123, 4.5e2, 0x10, .inf, yes]
+```
+
+→ `list(TRUE, 123L, 450, 16L, Inf, "yes")`
+
+If a sequence is homogeneous and `simplify = TRUE`, nulls become the
+appropriate `NA_*` values.
+
+## End-to-end example
+
+``` yaml
+doc:
+  pets:
+    - cat
+    - dog
+  numbers: [1, 2.5, 0x10, .inf, null]
+  integers: [1, 2, 3, 0x10, null]
+  flags: {enabled: true, label: on}
+  literal: |
+    hello
+    world
+  folded: >
+    hello
+    world
+  quoted:
+    - "line\nbreak"
+    - 'quote: ''here'''
+  plain: [yes, no]
+  mixed: [won't simplify, 123, true]
+```
+
+R result
+([`parse_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
+with defaults):
+
+``` r
+list(
+  doc = list(
+    pets = c("cat", "dog"),
+    numbers = c(1, 2.5, 16, Inf, NA_real_),
+    integers = c(1L, 2L, 3L, 16L, NA_integer_),
+    flags = list(enabled = TRUE, label = "on"),
+    literal = "hello\nworld\n",
+    folded = "hello world\n",
+    quoted = c("line\nbreak", "quote: 'here'"),
+    plain = c("yes", "no"),
+    mixed = list("won't simplify", 123L, TRUE)
+  )
+)
+```
+
+## Quick notes
+
+- Indentation defines structure for collections. Sibling elements share
+  an indent, children are indented more. YAML 1.2 forbids tabs; use
+  spaces.
+
+- All JSON is valid YAML.
+
+- Homogeneous sequences simplify to vectors unless `simplify = FALSE`.
+
+- Block scalars (`|`, `>`) always produce strings.
+
+- Booleans are only `true`/`false`;
+
+- `null` maps to `NULL` (or `NA` inside simplified vectors).
+
+These essentials cover most YAML you’ll run into in practice. If you
+encounter YAML tags or non-string mapping keys, check out the “Advanced
+YAML” vignette.
