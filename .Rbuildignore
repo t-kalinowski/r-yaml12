@@ -10,3 +10,4 @@
 ^\.vscode$
 ^\.github$
 ^README\.Rmd$
+^notes$
