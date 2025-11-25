@@ -22,7 +22,11 @@ pub(crate) fn yaml_body(yaml: &str, multi: bool) -> &str {
 
 fn emit_yaml_documents(docs: &[Yaml<'static>], multi: bool) -> Fallible<String> {
     if docs.is_empty() {
-        return Ok(String::new());
+        return if multi {
+            Ok(String::from("---\n"))
+        } else {
+            Ok(String::new())
+        };
     }
     let mut output = String::new();
     let mut emitter = YamlEmitter::new(&mut output);

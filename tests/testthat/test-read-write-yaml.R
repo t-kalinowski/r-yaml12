@@ -75,6 +75,25 @@ test_that("write_yaml and read_yaml handle multi-document streams", {
   )
 })
 
+test_that("write_yaml emits empty multi-document streams", {
+  path <- tempfile("yaml12-", fileext = ".yaml")
+  on.exit(unlink(path), add = TRUE)
+
+  docs <- list()
+
+  expect_identical(write_yaml(docs, path, multi = TRUE), docs)
+  expect_identical(readChar(path, file.info(path)$size), "---\n...\n")
+
+  expect_identical(read_yaml(path, multi = TRUE), list(NULL))
+  expect_identical(read_yaml(path, multi = TRUE, simplify = TRUE), list(NULL))
+
+  output <- paste0(
+    capture.output(write_yaml(docs, multi = TRUE)),
+    collapse = "\n"
+  )
+  expect_identical(output, "---\n...")
+})
+
 test_that("write_yaml flushes a final newline for files", {
   path <- tempfile("yaml12-", fileext = ".yaml")
   on.exit(unlink(path), add = TRUE)
