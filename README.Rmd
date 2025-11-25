@@ -16,6 +16,7 @@ knitr::opts_chunk$set(
 # yaml12
 
 <!-- badges: start -->
+[![R-CMD-check](https://github.com/t-kalinowski/r-yaml12/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/t-kalinowski/r-yaml12/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 A YAML 1.2 parser/formatter for R, implemented in Rust for speed and correctness.
