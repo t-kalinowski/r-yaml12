@@ -1,0 +1,104 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# yaml12
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+A YAML 1.2 parser/formatter for R, implemented in Rust for speed and correctness.
+
+## Installation
+
+You can install the development version of yaml12 from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("pak")
+pak::pak("t-kalinowski/r-yaml12")
+```
+
+## Quick start
+
+```{r}
+library(yaml12)
+
+yaml <- "
+title: A modern YAML parser written in Rust
+properties: [fast, correct, stable]
+sequences:
+  simplify: true
+"
+
+doc <- parse_yaml(yaml)
+str(doc)
+```
+
+### Reading and writing files
+
+```{r}
+value_out <- list(alpha = 1L, nested = c(TRUE, NA))
+
+write_yaml(value_out, "my.yaml")
+value_in <- read_yaml("my.yaml")
+
+stopifnot(identical(value_out, value_in))
+
+# Multi-document streams
+docs <- list(list(foo = 1), list(bar = c(2, NA)))
+write_yaml(docs, "my-multi.yaml", multi = TRUE)
+read_yaml("my-multi.yaml", multi = TRUE)
+```
+```{r, echo = FALSE}
+unlink(c("my.yaml", "my-multi.yaml"))
+```
+
+
+### Tag handlers
+
+Handlers let you opt into custom behavior for tagged nodes while keeping the default parser strict and safe.
+
+```{r}
+yaml <- "
+- !upper [rust, r]
+- !expr 6 * 7
+"
+
+handlers <- list(
+  "!expr"  = function(x) eval(str2lang(x), baseenv()),
+  "!upper" = toupper
+)
+
+parse_yaml(yaml, handlers = handlers)
+```
+
+### Formatting and round-tripping
+
+```{r}
+obj <- list(
+  seq = 1:2,
+  map = list(key = "value"),
+  tagged = structure("1 + 1", yaml_tag = "!expr")
+)
+
+yaml <- format_yaml(obj)
+cat(yaml)
+
+str(parse_yaml(yaml))  # tags preserved in `yaml_tag`
+```
+
+## Documentation
+
+- `vignette("yaml-2-minute-intro", package = "yaml12")` for a quick primer.
+- `vignette("yaml-tags-and-advanced-features", package = "yaml12")` for tags, handlers, anchors, and advanced YAML features.

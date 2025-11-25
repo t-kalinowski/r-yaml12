@@ -9,3 +9,4 @@
 ^AGENTS\.md$
 ^\.vscode$
 ^\.github$
+^README\.Rmd$
