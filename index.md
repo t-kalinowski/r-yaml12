@@ -113,7 +113,7 @@ str(parse_yaml(yaml))  # tags preserved in `yaml_tag`
 
 ## Documentation
 
-- [`vignette("yaml-2-minute-intro", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-2-minute-intro.md)
-  for a quick primer.
-- [`vignette("yaml-tags-and-advanced-features", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md)
-  for tags, handlers, anchors, and advanced YAML features.
+- YAML quick primer:
+  <https://posit-dev.github.io/r-yaml12/articles/yaml-2-minute-intro.html>.
+- Tags, handlers, anchors, and advanced YAML features:
+  <https://posit-dev.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.html>.

@@ -4,7 +4,7 @@ pkgdown_sha: ~
 articles:
   yaml-2-minute-intro: yaml-2-minute-intro.html
   yaml-tags-and-advanced-features: yaml-tags-and-advanced-features.html
-last_built: 2025-11-26T14:30Z
+last_built: 2025-11-26T16:43Z
 urls:
   reference: https://posit-dev.github.io/r-yaml12/reference
   article: https://posit-dev.github.io/r-yaml12/articles
