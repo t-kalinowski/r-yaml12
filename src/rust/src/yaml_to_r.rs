@@ -6,7 +6,7 @@ use crate::{api_other, sym_yaml_keys, sym_yaml_tag, Fallible, TIMESTAMP_SUPPORT_
 use extendr_api::prelude::*;
 use saphyr::{Mapping, Scalar, Tag, Yaml, YamlLoader};
 use saphyr_parser::{Parser, ScalarStyle};
-use std::{fs, mem};
+use std::{borrow::Cow, fs, mem};
 
 fn resolve_representation(node: &mut Yaml, _simplify: bool) {
     let (value, style, tag) = match mem::replace(node, Yaml::BadValue) {
@@ -116,6 +116,15 @@ fn sequence_to_robj(
 
     let mut out_type = RVectorType::List;
     let mut simplify = simplify_seqs;
+
+    if !simplify_seqs {
+        let mut values = Vec::with_capacity(seq.len());
+        for node in seq {
+            resolve_representation(node, simplify_seqs);
+            values.push(yaml_to_robj(node, simplify_seqs, handlers)?);
+        }
+        return Ok(List::from_values(values).into());
+    }
 
     // iterate over the vec once to see if we can simplify, fail early/fast if not
     for node in seq.iter_mut() {
@@ -227,6 +236,30 @@ fn mapping_to_robj(
     handlers: Option<&HandlerRegistry<'_>>,
 ) -> Fallible<Robj> {
     let len = map.len();
+
+    if handlers.is_none() {
+        let all_plain_string_keys = map
+            .iter()
+            .all(|(key, _)| matches!(key, Yaml::Value(Scalar::String(_))));
+
+        if all_plain_string_keys {
+            let mut names: Vec<Cow<'_, str>> = Vec::with_capacity(len);
+            let mut values: Vec<Robj> = Vec::with_capacity(len);
+            for (key, mut value) in mem::take(map) {
+                let name = match key {
+                    Yaml::Value(Scalar::String(name)) => name,
+                    _ => unreachable!("checked for only plain string keys"),
+                };
+                names.push(name);
+                values.push(yaml_to_robj(&mut value, simplify, handlers)?);
+            }
+
+            let name_refs: Vec<&str> = names.iter().map(|name| name.as_ref()).collect();
+            let list = List::from_names_and_values(&name_refs, values.into_iter())
+                .map_err(|err| api_other(err.to_string()))?;
+            return Ok(list.into());
+        }
+    }
 
     let mut values: Vec<Robj> = Vec::with_capacity(len);
     let mut keys_for_names: Vec<Yaml> = Vec::with_capacity(len);
@@ -522,7 +555,7 @@ pub(crate) fn read_yaml_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use saphyr::LoadableYamlNode;
+    use saphyr::{LoadableYamlNode, Scalar as YamlScalar};
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     enum ParsedValueKind {
@@ -560,7 +593,7 @@ mod tests {
         for (input, expected_value) in cases {
             let parsed = load_scalar(input);
             match parsed {
-                Yaml::Value(Scalar::String(value)) => {
+                Yaml::Value(YamlScalar::String(value)) => {
                     assert_eq!(
                         expected_value,
                         ParsedValueKind::String,
@@ -576,7 +609,7 @@ mod tests {
                         "input `{input}` canonical detection should match core `str` suffix",
                     );
                     match (expected_value, inner.as_ref()) {
-                        (ParsedValueKind::Boolean, Yaml::Value(Scalar::Boolean(value))) => {
+                        (ParsedValueKind::Boolean, Yaml::Value(YamlScalar::Boolean(value))) => {
                             assert!(
                                 *value,
                                 "input `{input}` should parse to boolean `true` when not core"
@@ -613,7 +646,7 @@ mod tests {
         for input in cases {
             let parsed = load_scalar(input);
             match parsed {
-                Yaml::Value(Scalar::Null) => {
+                Yaml::Value(YamlScalar::Null) => {
                     // Canonical null scalars should not carry tags.
                 }
                 Yaml::Tagged(tag, inner) => {
@@ -624,7 +657,7 @@ mod tests {
                         "input `{input}` canonical detection should match core `null` suffix",
                     );
                     assert!(
-                        matches!(inner.as_ref(), Yaml::Value(Scalar::Null)),
+                        matches!(inner.as_ref(), Yaml::Value(YamlScalar::Null)),
                         "input `{input}` should parse to tagged null scalar"
                     );
                 }

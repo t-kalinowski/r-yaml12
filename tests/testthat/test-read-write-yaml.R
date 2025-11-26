@@ -75,6 +75,32 @@ test_that("write_yaml and read_yaml handle multi-document streams", {
   )
 })
 
+test_that("read_yaml respects simplify = FALSE for simple scalars", {
+  path <- tempfile("yaml12-simplify-", fileext = ".yaml")
+  on.exit(unlink(path), add = TRUE)
+
+  writeLines(c("- 1", "- 2", "- null"), path)
+
+  unsimplified <- read_yaml(path, simplify = FALSE)
+  expect_identical(unsimplified, list(1L, 2L, NULL))
+
+  simplified <- read_yaml(path, simplify = TRUE)
+  expect_identical(simplified, c(1L, 2L, NA))
+})
+
+test_that("read_yaml omits yaml_keys for plain string mapping keys", {
+  path <- tempfile("yaml12-keys-", fileext = ".yaml")
+  on.exit(unlink(path), add = TRUE)
+
+  writeLines(c("alpha: 1", "beta: true"), path)
+  parsed <- read_yaml(path, simplify = FALSE)
+
+  expect_null(attr(parsed, "yaml_keys", exact = TRUE))
+  expect_identical(names(parsed), c("alpha", "beta"))
+  expect_identical(parsed$alpha, 1L)
+  expect_identical(parsed$beta, TRUE)
+})
+
 test_that("write_yaml emits empty multi-document streams", {
   path <- tempfile("yaml12-", fileext = ".yaml")
   on.exit(unlink(path), add = TRUE)

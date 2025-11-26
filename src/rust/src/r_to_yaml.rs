@@ -186,13 +186,10 @@ fn has_class(robj: &Robj, class: &str) -> bool {
 }
 
 fn posix_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
-    let tz_attr_raw = robj.get_attrib("tzone");
-    let tz_attr = tz_attr_raw.as_ref().and_then(|tz| {
-        tz.as_str_iter()
-            .and_then(|mut iter| iter.next().map(|s| s.to_string()))
-    });
-
-    let tz_name = tz_attr.as_deref().filter(|s| !s.is_empty());
+    let tz_name = robj
+        .get_attrib("tzone")
+        .and_then(|tz| tz.as_str())
+        .filter(|s| !s.is_empty());
 
     enum PosixTz<'a> {
         NaiveLocal,
@@ -206,7 +203,7 @@ fn posix_to_yaml(robj: &Robj) -> Fallible<Yaml<'static>> {
         Some(tz) => match offset_minutes_from_tzone(tz) {
             Some(0) => PosixTz::Utc,
             Some(offset_minutes) => PosixTz::Fixed { offset_minutes },
-            None => PosixTz::Named(Cow::Owned(tz.to_string())),
+            None => PosixTz::Named(Cow::Borrowed(tz)),
         },
     };
 

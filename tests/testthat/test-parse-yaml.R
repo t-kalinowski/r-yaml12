@@ -63,6 +63,28 @@ bar: baz
   expect_error(parse_yaml(c("foo: 1", NA_character_)), "must not contain NA")
 })
 
+test_that("parse_yaml keeps sequences as lists when simplify = FALSE", {
+  yaml <- "
+- true
+- 3
+- null
+"
+  parsed <- parse_yaml(yaml, simplify = FALSE)
+  expect_identical(parsed, list(TRUE, 3L, NULL))
+})
+
+test_that("parse_yaml omits yaml_keys for plain string keys", {
+  yaml <- "
+alpha: 1
+beta: true
+"
+  parsed <- parse_yaml(yaml, simplify = FALSE)
+  expect_null(attr(parsed, "yaml_keys", exact = TRUE))
+  expect_identical(names(parsed), c("alpha", "beta"))
+  expect_identical(parsed$alpha, 1L)
+  expect_identical(parsed$beta, TRUE)
+})
+
 test_that("timestamp tags keep yaml_tag when timestamp support is disabled", {
   yaml <- "
 - !!timestamp 2025-01-01
