@@ -15,6 +15,12 @@ correctness. Built on the excellent
 
 ## Installation
 
+You can install yaml12 from CRAN with:
+
+``` r
+install.packages("yaml12")
+```
+
 You can install the development version of yaml12 from
 [GitHub](https://github.com/) with:
 
@@ -81,8 +87,8 @@ handlers <- list(
 
 parse_yaml(yaml, handlers = handlers)
 #> [[1]]
-#> [1] "RUST" "R"
-#>
+#> [1] "RUST" "R"   
+#> 
 #> [[2]]
 #> [1] 42
 ```
