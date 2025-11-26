@@ -5,8 +5,7 @@
 
 <!-- badges: start -->
 
-[![R-CMD-check](https://github.com/t-kalinowski/r-yaml12/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/t-kalinowski/r-yaml12/actions/workflows/R-CMD-check.yaml)
-[![extendr](https://img.shields.io/badge/extendr-*-276DC2)](https://extendr.github.io/extendr/extendr_api/)
+[![R-CMD-check](https://github.com/posit-dev/r-yaml12/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/posit-dev/r-yaml12/actions/workflows/R-CMD-check.yaml)
 
 <!-- badges: end -->
 
@@ -21,7 +20,7 @@ You can install the development version of yaml12 from
 
 ``` r
 # install.packages("pak")
-pak::pak("t-kalinowski/r-yaml12")
+pak::pak("posit-dev/r-yaml12")
 ```
 
 ## Quick start
@@ -82,8 +81,8 @@ handlers <- list(
 
 parse_yaml(yaml, handlers = handlers)
 #> [[1]]
-#> [1] "RUST" "R"   
-#> 
+#> [1] "RUST" "R"
+#>
 #> [[2]]
 #> [1] 42
 ```

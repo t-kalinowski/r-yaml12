@@ -12,9 +12,9 @@ Description: A fast, correct, ergonomic YAML 1.2 parser and generator
     Offers opt-in handlers for custom tag behavior and round-trips common
     R data structures. Proudly supported by Posit.
 License: MIT + file LICENSE
-URL: https://t-kalinowski.github.io/r-yaml12/,
-    https://github.com/t-kalinowski/r-yaml12
-BugReports: https://github.com/t-kalinowski/r-yaml12/issues
+URL: https://posit-dev.github.io/r-yaml12/,
+    https://github.com/posit-dev/r-yaml12
+BugReports: https://github.com/posit-dev/r-yaml12/issues
 Depends:
     R (>= 4.2)
 Suggests:
