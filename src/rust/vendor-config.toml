@@ -6,8 +6,8 @@ git = "https://github.com/extendr/extendr"
 rev = "a3e35fb42a008d0c209e61d994143d00a86e350f"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/posit-dev/saphyr?branch=r-patched"]
-git = "https://github.com/posit-dev/saphyr"
+[source."git+https://github.com/t-kalinowski/saphyr?branch=r-patched"]
+git = "https://github.com/t-kalinowski/saphyr"
 branch = "r-patched"
 replace-with = "vendored-sources"
 
