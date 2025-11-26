@@ -39,9 +39,9 @@ parse_yaml("true")
 
 ## Using handlers to transform tagged nodes while parsing
 
-[`parse_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
+[`parse_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)
 and
-[`read_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
+[`read_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)
 accept `handlers`: a named list of functions whose names are YAML tag
 strings. Handlers run on any matching tagged node. For tagged scalars,
 the handler always receives a length-1 string; for tagged sequences or
@@ -272,8 +272,8 @@ optionally include an end marker (`...`).
 ### Reading Multiple Documents
 
 For the reading functions
-([`read_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md),
-[`parse_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)),
+([`read_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md),
+[`parse_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)),
 the `multi` argument defaults to `FALSE`. In this mode, only the first
 YAML document is read. If an end marker (`...`) or a new start marker
 (`---`) is encountered, the parser stops and returns only the first
@@ -299,13 +299,13 @@ parse_yaml(doc_stream, multi = TRUE)
 ### Writing Multiple Documents
 
 For the writing functions
-([`write_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md),
-[`format_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md)),
+([`write_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md),
+[`format_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md)),
 `multi` also defaults to `FALSE`, producing a single YAML document. When
 `multi = TRUE`, the provided R object is treated as a list of documents
 and written as a YAML document stream, with documents separated by the
 start marker `---`. Regardless of `multi`,
-[`write_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md)
+[`write_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md)
 always includes an initial start marker and a final end marker.
 
 ``` r
@@ -352,9 +352,9 @@ the first YAML document.
 ## Writing YAML with tags
 
 To emit a tag, attach `yaml_tag` to an R value before calling
-[`format_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md)
+[`format_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md)
 or
-[`write_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md).
+[`write_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md).
 
 ``` r
 tagged <- structure("1 + x", yaml_tag = "!expr")

@@ -11,7 +11,7 @@ You can install the development version of yaml12 from
 
 ``` r
 # install.packages("pak")
-pak::pak("t-kalinowski/r-yaml12")
+pak::pak("posit-dev/r-yaml12")
 ```
 
 ## Quick start
@@ -72,8 +72,8 @@ handlers <- list(
 
 parse_yaml(yaml, handlers = handlers)
 #> [[1]]
-#> [1] "RUST" "R"   
-#> 
+#> [1] "RUST" "R"
+#>
 #> [[2]]
 #> [1] 42
 ```
@@ -107,7 +107,7 @@ str(parse_yaml(yaml))  # tags preserved in `yaml_tag`
 
 ## Documentation
 
-- [`vignette("yaml-2-minute-intro", package = "yaml12")`](https://t-kalinowski.github.io/r-yaml12/articles/yaml-2-minute-intro.md)
+- [`vignette("yaml-2-minute-intro", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-2-minute-intro.md)
   for a quick primer.
-- [`vignette("yaml-tags-and-advanced-features", package = "yaml12")`](https://t-kalinowski.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md)
+- [`vignette("yaml-tags-and-advanced-features", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md)
   for tags, handlers, anchors, and advanced YAML features.

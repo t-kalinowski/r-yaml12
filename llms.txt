@@ -11,7 +11,7 @@ You can install the development version of yaml12 from
 
 ``` r
 # install.packages("pak")
-pak::pak("t-kalinowski/r-yaml12")
+pak::pak("posit-dev/r-yaml12")
 ```
 
 ## Quick start
@@ -72,8 +72,8 @@ handlers <- list(
 
 parse_yaml(yaml, handlers = handlers)
 #> [[1]]
-#> [1] "RUST" "R"   
-#> 
+#> [1] "RUST" "R"
+#>
 #> [[2]]
 #> [1] 42
 ```
@@ -107,20 +107,20 @@ str(parse_yaml(yaml))  # tags preserved in `yaml_tag`
 
 ## Documentation
 
-- [`vignette("yaml-2-minute-intro", package = "yaml12")`](https://t-kalinowski.github.io/r-yaml12/articles/yaml-2-minute-intro.md)
+- [`vignette("yaml-2-minute-intro", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-2-minute-intro.md)
   for a quick primer.
-- [`vignette("yaml-tags-and-advanced-features", package = "yaml12")`](https://t-kalinowski.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md)
+- [`vignette("yaml-tags-and-advanced-features", package = "yaml12")`](https://posit-dev.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md)
   for tags, handlers, anchors, and advanced YAML features.
 
 # Package index
 
 ## All functions
 
-- [`format_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md)
-  [`write_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/format_yaml.md)
+- [`format_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md)
+  [`write_yaml()`](https://posit-dev.github.io/r-yaml12/reference/format_yaml.md)
   : Format or write R objects as YAML 1.2.
-- [`parse_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
-  [`read_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
+- [`parse_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)
+  [`read_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)
   : Parse YAML 1.2 document(s) into base R structures.
 
 # Articles
@@ -128,6 +128,6 @@ str(parse_yaml(yaml))  # tags preserved in `yaml_tag`
 ### All vignettes
 
 - [YAML in 2 Minutes: A Gentle Introduction for R
-  Users](https://t-kalinowski.github.io/r-yaml12/articles/yaml-2-minute-intro.md):
+  Users](https://posit-dev.github.io/r-yaml12/articles/yaml-2-minute-intro.md):
 - [YAML Tags, Anchors, and Advanced Features with
-  yaml12](https://t-kalinowski.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md):
+  yaml12](https://posit-dev.github.io/r-yaml12/articles/yaml-tags-and-advanced-features.md):

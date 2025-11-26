@@ -224,7 +224,7 @@ doc:
 ```
 
 R result
-([`parse_yaml()`](https://t-kalinowski.github.io/r-yaml12/reference/parse_yaml.md)
+([`parse_yaml()`](https://posit-dev.github.io/r-yaml12/reference/parse_yaml.md)
 with defaults):
 
 ``` r
